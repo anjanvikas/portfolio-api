@@ -9,13 +9,26 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/anjanvikas2001/portfolio-api/internal/config"
+	"github.com/anjanvikas2001/portfolio-api/internal/store"
 )
 
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("config: %v", err)
 	}
+
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	defer rootCancel()
+
+	pool, err := store.Connect(rootCtx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("postgres: %v", err)
+	}
+	defer pool.Close()
+	log.Printf("postgres connected")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +37,7 @@ func main() {
 	})
 
 	srv := &http.Server{
-		Addr:         ":" + port,
+		Addr:         ":" + cfg.Port,
 		Handler:      mux,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -32,7 +45,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("server listening on :%s", port)
+		log.Printf("server listening on :%s", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %v", err)
 		}
