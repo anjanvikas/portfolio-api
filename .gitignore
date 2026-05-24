@@ -1,0 +1,28 @@
+# Binaries
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build output
+/tmp/
+
+# Environment
+.env
+.env.local
+
+# Air (hot reload)
+.air.toml
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
