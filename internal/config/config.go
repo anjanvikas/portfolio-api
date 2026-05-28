@@ -9,32 +9,36 @@ import (
 )
 
 type Config struct {
-	Port          string
-	DatabaseURL   string
-	JWTSecret     string
-	AdminPassword string
-	R2AccessKey   string
-	R2SecretKey   string
-	R2BucketName  string
-	R2Endpoint    string
+	Port               string
+	DatabaseURL        string
+	JWTSecret          string
+	AdminPasswordHash  string
+	R2AccessKey        string
+	R2SecretKey        string
+	R2BucketName       string
+	R2Endpoint         string
+	CORSAllowedOrigins []string
+	CookieSecure       bool
 }
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		Port:          getenvDefault("PORT", "8080"),
-		DatabaseURL:   os.Getenv("DATABASE_URL"),
-		JWTSecret:     os.Getenv("JWT_SECRET"),
-		AdminPassword: os.Getenv("ADMIN_PASSWORD"),
-		R2AccessKey:   os.Getenv("R2_ACCESS_KEY"),
-		R2SecretKey:   os.Getenv("R2_SECRET_KEY"),
-		R2BucketName:  os.Getenv("R2_BUCKET_NAME"),
-		R2Endpoint:    os.Getenv("R2_ENDPOINT"),
+		Port:               getenvDefault("PORT", "8080"),
+		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		JWTSecret:          os.Getenv("JWT_SECRET"),
+		AdminPasswordHash:  os.Getenv("ADMIN_PASSWORD"),
+		R2AccessKey:        os.Getenv("R2_ACCESS_KEY"),
+		R2SecretKey:        os.Getenv("R2_SECRET_KEY"),
+		R2BucketName:       os.Getenv("R2_BUCKET_NAME"),
+		R2Endpoint:         os.Getenv("R2_ENDPOINT"),
+		CORSAllowedOrigins: parseCSV(getenvDefault("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
+		CookieSecure:       parseBool(getenvDefault("COOKIE_SECURE", "false")),
 	}
 
 	required := map[string]string{
 		"DATABASE_URL":   cfg.DatabaseURL,
 		"JWT_SECRET":     cfg.JWTSecret,
-		"ADMIN_PASSWORD": cfg.AdminPassword,
+		"ADMIN_PASSWORD": cfg.AdminPasswordHash,
 		"R2_ACCESS_KEY":  cfg.R2AccessKey,
 		"R2_SECRET_KEY":  cfg.R2SecretKey,
 		"R2_BUCKET_NAME": cfg.R2BucketName,
@@ -59,4 +63,24 @@ func getenvDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func parseBool(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseCSV(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
