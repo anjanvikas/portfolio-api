@@ -18,6 +18,9 @@
 .air.toml
 tmp/
 
+# Next.js (stray build artifact)
+.next/
+
 # OS
 .DS_Store
 Thumbs.db

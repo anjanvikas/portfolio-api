@@ -47,8 +47,8 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	// ---- Profile ----------------------------------------------------------
 	if _, err := q.UpsertProfile(ctx, store.UpsertProfileParams{
 		Name:      "Anjan Vikas Reddy",
-		Headline:  "Software engineer — building neo-brutalist things on the side",
-		Bio:       "Backend-leaning generalist. I write Go, pick fights with CSS, and ship.",
+		Headline:  "Backend engineer",
+		Bio:       "I build developer tools and back-of-house systems that quietly do the heavy lifting. Currently exploring agents, RAG, and Go.",
 		Location:  "Hyderabad, IN",
 		Email:     "anjanvikas2001@gmail.com",
 		ResumeUrl: text("https://example.com/resume.pdf"),
@@ -57,11 +57,14 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 		return fmt.Errorf("profile: %w", err)
 	}
 
-	// ---- Social links (3) -------------------------------------------------
+	// ---- Social links (5) -------------------------------------------------
+	// Order matches the footer wireframe: GH · LI · TW · YT · LC.
 	socials := []store.UpsertSocialLinkParams{
 		{Name: "github", Url: "https://github.com/anjanvikas2001", SortOrder: 0},
 		{Name: "linkedin", Url: "https://www.linkedin.com/in/anjanvikas/", SortOrder: 1},
 		{Name: "twitter", Url: "https://twitter.com/anjanvikas", SortOrder: 2},
+		{Name: "youtube", Url: "https://youtube.com/@anjanvikas", SortOrder: 3},
+		{Name: "leetcode", Url: "https://leetcode.com/anjanvikas", SortOrder: 4},
 	}
 	for _, s := range socials {
 		if _, err := q.UpsertSocialLink(ctx, s); err != nil {

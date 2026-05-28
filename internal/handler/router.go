@@ -10,6 +10,7 @@ import (
 
 	"github.com/anjanvikas2001/portfolio-api/internal/auth"
 	mw "github.com/anjanvikas2001/portfolio-api/internal/middleware"
+	"github.com/anjanvikas2001/portfolio-api/internal/store"
 )
 
 // Deps bundles everything the HTTP layer needs from the rest of the app.
@@ -38,7 +39,9 @@ func NewRouter(d Deps) http.Handler {
 	}))
 	r.Use(mw.Security)
 
+	queries := store.New(d.Pool)
 	health := &Health{Pool: d.Pool}
+	profileH := NewProfile(queries)
 	authH := NewAuth(AuthDeps{
 		JWTSecret:         d.JWTSecret,
 		AdminPasswordHash: d.AdminPasswordHash,
@@ -48,6 +51,10 @@ func NewRouter(d Deps) http.Handler {
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Method(http.MethodGet, "/health", health)
+
+		// Public read endpoints powering the marketing site.
+		r.Get("/profile", profileH.Get)
+		r.Get("/profile/resume", profileH.Resume)
 
 		// Public auth endpoints — login is rate-limited and logout must work
 		// even with an expired session, so neither sits behind RequireAdmin.
