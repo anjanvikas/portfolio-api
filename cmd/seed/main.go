@@ -108,6 +108,14 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	if err != nil {
 		return fmt.Errorf("tag design: %w", err)
 	}
+	tagRag, err := q.UpsertTag(ctx, store.UpsertTagParams{Slug: "rag", Name: "RAG"})
+	if err != nil {
+		return fmt.Errorf("tag rag: %w", err)
+	}
+	tagNext, err := q.UpsertTag(ctx, store.UpsertTagParams{Slug: "nextjs", Name: "Next.js"})
+	if err != nil {
+		return fmt.Errorf("tag nextjs: %w", err)
+	}
 
 	// ---- Blog series + 2 posts in series + 1 standalone ------------------
 	series, err := q.UpsertBlogSeries(ctx, store.UpsertBlogSeriesParams{
@@ -167,8 +175,10 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 		}
 	}
 
-	// ---- Project (1, with all three markdown sections) -------------------
-	project, err := q.UpsertProject(ctx, store.UpsertProjectParams{
+	// ---- Projects (3 featured, with markdown sections) -------------------
+	// The homepage "featured work" strip renders up to 3 cards; seed exactly
+	// that many so the section reads as designed. sort_order drives the order.
+	mealmind, err := q.UpsertProject(ctx, store.UpsertProjectParams{
 		Slug:         "mealmind",
 		Title:        "Mealmind",
 		Tagline:      "A spec-driven recipe engine that cooks for you.",
@@ -179,14 +189,55 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 		RepoUrl:      text("https://github.com/anjanvikas2001/mealmind"),
 		LiveUrl:      text("https://mealmind.app"),
 		SortOrder:    0,
+		Featured:     true,
 		PublishedAt:  ts(2026, 4, 1),
 	})
 	if err != nil {
-		return fmt.Errorf("project: %w", err)
+		return fmt.Errorf("project mealmind: %w", err)
 	}
+
+	carpilot, err := q.UpsertProject(ctx, store.UpsertProjectParams{
+		Slug:         "carpilot",
+		Title:        "CarPilot",
+		Tagline:      "Spec-driven car-buying assistant.",
+		Summary:      "A RAG assistant that reads listings, owner manuals, and recall notices to answer buying questions in plain language.",
+		BodyOverview: "## Overview\n\nCarPilot ingests vehicle listings and documentation, embeds them, and answers buyer questions with citations back to the source.\n",
+		BodyWhyBuilt: "## Why I built this\n\nBuying a used car means drowning in PDFs and forum threads. CarPilot turns that pile into a conversation.\n",
+		BodyLearning: "## Learning journey\n\nChunking strategy mattered more than model choice; recall notices needed their own retrieval path.\n",
+		RepoUrl:      text("https://github.com/anjanvikas2001/carpilot"),
+		SortOrder:    1,
+		Featured:     true,
+		PublishedAt:  ts(2026, 3, 1),
+	})
+	if err != nil {
+		return fmt.Errorf("project carpilot: %w", err)
+	}
+
+	renderStrats, err := q.UpsertProject(ctx, store.UpsertProjectParams{
+		Slug:         "render-strategies",
+		Title:        "Render Strategies",
+		Tagline:      "Side-by-side demos of Next.js rendering modes.",
+		Summary:      "Interactive reference comparing SSR, SSG, ISR, and edge rendering with live timing waterfalls for each.",
+		BodyOverview: "## Overview\n\nA teaching playground that renders the same page four ways and shows the network waterfall for each strategy side by side.\n",
+		BodyWhyBuilt: "## Why I built this\n\nEvery Next.js rendering explainer is prose. I wanted one you could poke at.\n",
+		BodyLearning: "## Learning journey\n\nThe edge runtime's constraints forced a much leaner data layer than I expected.\n",
+		RepoUrl:      text("https://github.com/anjanvikas2001/render-strategies"),
+		LiveUrl:      text("https://render-strategies.vercel.app"),
+		SortOrder:    2,
+		Featured:     true,
+		PublishedAt:  ts(2026, 2, 1),
+	})
+	if err != nil {
+		return fmt.Errorf("project render-strategies: %w", err)
+	}
+
 	for _, link := range []store.LinkProjectTagParams{
-		{ProjectID: project.ID, TagID: tagGo.ID},
-		{ProjectID: project.ID, TagID: tagDesign.ID},
+		{ProjectID: mealmind.ID, TagID: tagGo.ID},
+		{ProjectID: mealmind.ID, TagID: tagDesign.ID},
+		{ProjectID: carpilot.ID, TagID: tagGo.ID},
+		{ProjectID: carpilot.ID, TagID: tagRag.ID},
+		{ProjectID: renderStrats.ID, TagID: tagNext.ID},
+		{ProjectID: renderStrats.ID, TagID: tagDesign.ID},
 	} {
 		if err := q.LinkProjectTag(ctx, link); err != nil {
 			return fmt.Errorf("link project tag: %w", err)

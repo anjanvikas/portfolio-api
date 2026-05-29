@@ -88,6 +88,7 @@ type Project struct {
 	PublishedAt  pgtype.Timestamptz `json:"published_at"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	Featured     bool               `json:"featured"`
 }
 
 type ProjectTag struct {

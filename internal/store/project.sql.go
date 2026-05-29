@@ -27,8 +27,72 @@ func (q *Queries) LinkProjectTag(ctx context.Context, arg LinkProjectTagParams) 
 	return err
 }
 
+const listProjectCards = `-- name: ListProjectCards :many
+SELECT
+    p.slug,
+    p.title,
+    p.summary,
+    a.r2_key AS cover_key,
+    COALESCE(
+        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        '{}'
+    )::text[] AS tags
+FROM project p
+LEFT JOIN asset a       ON a.id = p.cover_asset_id AND a.deleted_at IS NULL
+LEFT JOIN project_tags pt ON pt.project_id = p.id
+LEFT JOIN tag t         ON t.id = pt.tag_id
+WHERE p.published_at IS NOT NULL
+  AND (NOT $1::boolean OR p.featured = true)
+GROUP BY p.id, a.r2_key
+ORDER BY p.sort_order, p.published_at DESC
+LIMIT $2
+`
+
+type ListProjectCardsParams struct {
+	FeaturedOnly bool  `json:"featured_only"`
+	RowLimit     int32 `json:"row_limit"`
+}
+
+type ListProjectCardsRow struct {
+	Slug     string      `json:"slug"`
+	Title    string      `json:"title"`
+	Summary  string      `json:"summary"`
+	CoverKey pgtype.Text `json:"cover_key"`
+	Tags     []string    `json:"tags"`
+}
+
+// Powers the homepage "featured work" strip and the projects index. Joins the
+// cover asset (nullable) and aggregates the project's tag names into a single
+// text[] so the handler builds each card in one round trip. When featured_only
+// is true the result is limited to projects flagged for the homepage.
+func (q *Queries) ListProjectCards(ctx context.Context, arg ListProjectCardsParams) ([]ListProjectCardsRow, error) {
+	rows, err := q.db.Query(ctx, listProjectCards, arg.FeaturedOnly, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectCardsRow{}
+	for rows.Next() {
+		var i ListProjectCardsRow
+		if err := rows.Scan(
+			&i.Slug,
+			&i.Title,
+			&i.Summary,
+			&i.CoverKey,
+			&i.Tags,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjects = `-- name: ListProjects :many
-SELECT id, slug, title, tagline, summary, body_overview, body_why_built, body_learning, cover_asset_id, repo_url, live_url, sort_order, published_at, created_at, updated_at FROM project
+SELECT id, slug, title, tagline, summary, body_overview, body_why_built, body_learning, cover_asset_id, repo_url, live_url, sort_order, published_at, created_at, updated_at, featured FROM project
 WHERE published_at IS NOT NULL
 ORDER BY sort_order, published_at DESC
 `
@@ -58,6 +122,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Featured,
 		); err != nil {
 			return nil, err
 		}
@@ -74,9 +139,9 @@ INSERT INTO project (
     slug, title, tagline, summary,
     body_overview, body_why_built, body_learning,
     cover_asset_id, repo_url, live_url,
-    sort_order, published_at
+    sort_order, featured, published_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 ON CONFLICT (slug) DO UPDATE
 SET title          = EXCLUDED.title,
     tagline        = EXCLUDED.tagline,
@@ -88,9 +153,10 @@ SET title          = EXCLUDED.title,
     repo_url       = EXCLUDED.repo_url,
     live_url       = EXCLUDED.live_url,
     sort_order     = EXCLUDED.sort_order,
+    featured       = EXCLUDED.featured,
     published_at   = EXCLUDED.published_at,
     updated_at     = now()
-RETURNING id, slug, title, tagline, summary, body_overview, body_why_built, body_learning, cover_asset_id, repo_url, live_url, sort_order, published_at, created_at, updated_at
+RETURNING id, slug, title, tagline, summary, body_overview, body_why_built, body_learning, cover_asset_id, repo_url, live_url, sort_order, published_at, created_at, updated_at, featured
 `
 
 type UpsertProjectParams struct {
@@ -105,6 +171,7 @@ type UpsertProjectParams struct {
 	RepoUrl      pgtype.Text        `json:"repo_url"`
 	LiveUrl      pgtype.Text        `json:"live_url"`
 	SortOrder    int32              `json:"sort_order"`
+	Featured     bool               `json:"featured"`
 	PublishedAt  pgtype.Timestamptz `json:"published_at"`
 }
 
@@ -121,6 +188,7 @@ func (q *Queries) UpsertProject(ctx context.Context, arg UpsertProjectParams) (P
 		arg.RepoUrl,
 		arg.LiveUrl,
 		arg.SortOrder,
+		arg.Featured,
 		arg.PublishedAt,
 	)
 	var i Project
@@ -140,6 +208,7 @@ func (q *Queries) UpsertProject(ctx context.Context, arg UpsertProjectParams) (P
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Featured,
 	)
 	return i, err
 }
