@@ -57,6 +57,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Get("/profile", profileH.Get)
 		r.Get("/profile/resume", profileH.Resume)
 		r.Get("/projects", projectsH.List)
+		r.Get("/projects/{slug}", projectsH.Detail)
 
 		// Public auth endpoints — login is rate-limited and logout must work
 		// even with an expired session, so neither sits behind RequireAdmin.

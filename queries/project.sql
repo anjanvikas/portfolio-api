@@ -32,6 +32,35 @@ SELECT * FROM project
 WHERE published_at IS NOT NULL
 ORDER BY sort_order, published_at DESC;
 
+-- name: GetProjectBySlug :one
+-- Powers the project detail page. Returns the full project (all three markdown
+-- body sections, repo/live links, meta) plus the cover asset key and the
+-- aggregated tag names so the page builds in a single round trip. Only
+-- published projects are visible to the public site.
+SELECT
+    p.slug,
+    p.title,
+    p.tagline,
+    p.summary,
+    p.body_overview,
+    p.body_why_built,
+    p.body_learning,
+    p.repo_url,
+    p.live_url,
+    p.published_at,
+    a.r2_key AS cover_key,
+    COALESCE(
+        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        '{}'
+    )::text[] AS tags
+FROM project p
+LEFT JOIN asset a       ON a.id = p.cover_asset_id AND a.deleted_at IS NULL
+LEFT JOIN project_tags pt ON pt.project_id = p.id
+LEFT JOIN tag t         ON t.id = pt.tag_id
+WHERE p.slug = sqlc.arg(slug)
+  AND p.published_at IS NOT NULL
+GROUP BY p.id, a.r2_key;
+
 -- name: ListProjectCards :many
 -- Powers the homepage "featured work" strip and the projects index. Joins the
 -- cover asset (nullable) and aggregates the project's tag names into a single

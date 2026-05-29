@@ -2,9 +2,13 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/anjanvikas2001/portfolio-api/internal/store"
 )
@@ -20,6 +24,7 @@ const (
 // handler. An interface keeps the handler unit-testable with a fake.
 type projectQueries interface {
 	ListProjectCards(ctx context.Context, arg store.ListProjectCardsParams) ([]store.ListProjectCardsRow, error)
+	GetProjectBySlug(ctx context.Context, slug string) (store.GetProjectBySlugRow, error)
 }
 
 // Projects groups the public read-only project handlers used by the homepage
@@ -74,6 +79,59 @@ func (p *Projects) List(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+type projectDetailDTO struct {
+	Slug         string   `json:"slug"`
+	Title        string   `json:"title"`
+	Tagline      string   `json:"tagline"`
+	Summary      string   `json:"summary"`
+	BodyOverview string   `json:"body_overview"`
+	BodyWhyBuilt string   `json:"body_why_built"`
+	BodyLearning string   `json:"body_learning"`
+	CoverURL     string   `json:"cover_url"`
+	RepoURL      string   `json:"repo_url"`
+	LiveURL      string   `json:"live_url"`
+	PublishedAt  string   `json:"published_at"`
+	Tags         []string `json:"tags"`
+}
+
+// Detail handles GET /api/v1/projects/{slug}. It returns the full project —
+// all three markdown body sections, repo/live links, and tags — for the
+// project detail page. Returns 404 when the slug is unknown or unpublished.
+func (p *Projects) Detail(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+
+	row, err := p.Q.GetProjectBySlug(r.Context(), slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+			return
+		}
+		slog.ErrorContext(r.Context(), "get project by slug", slog.String("slug", slug), slog.String("error", err.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	dto := projectDetailDTO{
+		Slug:         row.Slug,
+		Title:        row.Title,
+		Tagline:      row.Tagline,
+		Summary:      row.Summary,
+		BodyOverview: row.BodyOverview,
+		BodyWhyBuilt: row.BodyWhyBuilt,
+		BodyLearning: row.BodyLearning,
+		// cover_key is the R2 object key; empty until SCRUM-16 wires real asset
+		// hosting, in which case the UI falls back to a colored cover slab.
+		CoverURL: row.CoverKey.String,
+		RepoURL:  row.RepoUrl.String,
+		LiveURL:  row.LiveUrl.String,
+		Tags:     row.Tags,
+	}
+	if row.PublishedAt.Valid {
+		dto.PublishedAt = row.PublishedAt.Time.Format("2006-01-02")
+	}
+	writeJSON(w, http.StatusOK, dto)
 }
 
 // parseLimit clamps the ?limit param into [1, maxProjectLimit], falling back to

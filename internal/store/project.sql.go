@@ -11,6 +11,71 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getProjectBySlug = `-- name: GetProjectBySlug :one
+SELECT
+    p.slug,
+    p.title,
+    p.tagline,
+    p.summary,
+    p.body_overview,
+    p.body_why_built,
+    p.body_learning,
+    p.repo_url,
+    p.live_url,
+    p.published_at,
+    a.r2_key AS cover_key,
+    COALESCE(
+        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        '{}'
+    )::text[] AS tags
+FROM project p
+LEFT JOIN asset a       ON a.id = p.cover_asset_id AND a.deleted_at IS NULL
+LEFT JOIN project_tags pt ON pt.project_id = p.id
+LEFT JOIN tag t         ON t.id = pt.tag_id
+WHERE p.slug = $1
+  AND p.published_at IS NOT NULL
+GROUP BY p.id, a.r2_key
+`
+
+type GetProjectBySlugRow struct {
+	Slug         string             `json:"slug"`
+	Title        string             `json:"title"`
+	Tagline      string             `json:"tagline"`
+	Summary      string             `json:"summary"`
+	BodyOverview string             `json:"body_overview"`
+	BodyWhyBuilt string             `json:"body_why_built"`
+	BodyLearning string             `json:"body_learning"`
+	RepoUrl      pgtype.Text        `json:"repo_url"`
+	LiveUrl      pgtype.Text        `json:"live_url"`
+	PublishedAt  pgtype.Timestamptz `json:"published_at"`
+	CoverKey     pgtype.Text        `json:"cover_key"`
+	Tags         []string           `json:"tags"`
+}
+
+// Powers the project detail page. Returns the full project (all three markdown
+// body sections, repo/live links, meta) plus the cover asset key and the
+// aggregated tag names so the page builds in a single round trip. Only
+// published projects are visible to the public site.
+func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (GetProjectBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getProjectBySlug, slug)
+	var i GetProjectBySlugRow
+	err := row.Scan(
+		&i.Slug,
+		&i.Title,
+		&i.Tagline,
+		&i.Summary,
+		&i.BodyOverview,
+		&i.BodyWhyBuilt,
+		&i.BodyLearning,
+		&i.RepoUrl,
+		&i.LiveUrl,
+		&i.PublishedAt,
+		&i.CoverKey,
+		&i.Tags,
+	)
+	return i, err
+}
+
 const linkProjectTag = `-- name: LinkProjectTag :exec
 INSERT INTO project_tags (project_id, tag_id)
 VALUES ($1, $2)
