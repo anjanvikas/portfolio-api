@@ -7,6 +7,8 @@ package store
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getBlogSeriesBySlug = `-- name: GetBlogSeriesBySlug :one
@@ -24,6 +26,104 @@ func (q *Queries) GetBlogSeriesBySlug(ctx context.Context, slug string) (BlogSer
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listPublishedPostsBySeriesSlug = `-- name: ListPublishedPostsBySeriesSlug :many
+SELECT
+    p.title,
+    p.slug,
+    p.series_order,
+    p.published_at
+FROM blog_post p
+JOIN blog_series s ON s.id = p.series_id
+WHERE s.slug = $1
+  AND p.published_at IS NOT NULL
+ORDER BY p.series_order ASC
+`
+
+type ListPublishedPostsBySeriesSlugRow struct {
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	SeriesOrder pgtype.Int4        `json:"series_order"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+}
+
+// Powers GET /api/v1/series/{slug}. Returns the series' published posts in
+// reading order so the frontend can build series nav (prev/next) and the
+// series landing page. Pairs with GetBlogSeriesBySlug for the series meta.
+func (q *Queries) ListPublishedPostsBySeriesSlug(ctx context.Context, slug string) ([]ListPublishedPostsBySeriesSlugRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedPostsBySeriesSlug, slug)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPublishedPostsBySeriesSlugRow{}
+	for rows.Next() {
+		var i ListPublishedPostsBySeriesSlugRow
+		if err := rows.Scan(
+			&i.Title,
+			&i.Slug,
+			&i.SeriesOrder,
+			&i.PublishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSeriesWithCounts = `-- name: ListSeriesWithCounts :many
+SELECT
+    s.id,
+    s.slug,
+    s.name,
+    s.description,
+    COUNT(p.id)::bigint AS post_count
+FROM blog_series s
+JOIN blog_post p ON p.series_id = s.id AND p.published_at IS NOT NULL
+GROUP BY s.id
+ORDER BY s.name
+`
+
+type ListSeriesWithCountsRow struct {
+	ID          pgtype.UUID `json:"id"`
+	Slug        string      `json:"slug"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	PostCount   int64       `json:"post_count"`
+}
+
+// Powers GET /api/v1/series. Returns every series that has at least one
+// published post, with the count of published posts. The INNER JOIN drops
+// series whose posts are all still drafts (SCRUM-74 AC: exclude empty series).
+func (q *Queries) ListSeriesWithCounts(ctx context.Context) ([]ListSeriesWithCountsRow, error) {
+	rows, err := q.db.Query(ctx, listSeriesWithCounts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSeriesWithCountsRow{}
+	for rows.Next() {
+		var i ListSeriesWithCountsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.PostCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const upsertBlogSeries = `-- name: UpsertBlogSeries :one

@@ -11,6 +11,70 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getPublishedPostBySlug = `-- name: GetPublishedPostBySlug :one
+SELECT
+    p.slug,
+    p.title,
+    p.excerpt,
+    p.body,
+    p.published_at,
+    p.series_order,
+    a.r2_key  AS cover_key,
+    bs.name   AS series_name,
+    bs.slug   AS series_slug,
+    GREATEST(1, CEIL(
+        COALESCE(array_length(regexp_split_to_array(btrim(p.body), '\s+'), 1), 0)::numeric / 200
+    ))::int AS reading_time_mins,
+    COALESCE(
+        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        '{}'
+    )::text[] AS tags
+FROM blog_post p
+LEFT JOIN asset a          ON a.id = p.cover_asset_id AND a.deleted_at IS NULL
+LEFT JOIN blog_series bs   ON bs.id = p.series_id
+LEFT JOIN blog_post_tags pt ON pt.blog_post_id = p.id
+LEFT JOIN tag t            ON t.id = pt.tag_id
+WHERE p.slug = $1
+  AND p.published_at IS NOT NULL
+GROUP BY p.id, a.r2_key, bs.name, bs.slug
+`
+
+type GetPublishedPostBySlugRow struct {
+	Slug            string             `json:"slug"`
+	Title           string             `json:"title"`
+	Excerpt         string             `json:"excerpt"`
+	Body            string             `json:"body"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	SeriesOrder     pgtype.Int4        `json:"series_order"`
+	CoverKey        pgtype.Text        `json:"cover_key"`
+	SeriesName      pgtype.Text        `json:"series_name"`
+	SeriesSlug      pgtype.Text        `json:"series_slug"`
+	ReadingTimeMins int32              `json:"reading_time_mins"`
+	Tags            []string           `json:"tags"`
+}
+
+// Powers GET /api/v1/posts/{slug}. Full post body plus the same tag/series/
+// reading-time fields as the card query. Series siblings (prev/next, part X of
+// Y) are resolved separately via ListPublishedPostsBySeriesSlug. Published only.
+func (q *Queries) GetPublishedPostBySlug(ctx context.Context, slug string) (GetPublishedPostBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getPublishedPostBySlug, slug)
+	var i GetPublishedPostBySlugRow
+	err := row.Scan(
+		&i.Slug,
+		&i.Title,
+		&i.Excerpt,
+		&i.Body,
+		&i.PublishedAt,
+		&i.SeriesOrder,
+		&i.CoverKey,
+		&i.SeriesName,
+		&i.SeriesSlug,
+		&i.ReadingTimeMins,
+		&i.Tags,
+	)
+	return i, err
+}
+
 const linkBlogPostTag = `-- name: LinkBlogPostTag :exec
 INSERT INTO blog_post_tags (blog_post_id, tag_id)
 VALUES ($1, $2)
@@ -54,6 +118,81 @@ func (q *Queries) ListBlogPosts(ctx context.Context) ([]BlogPost, error) {
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublishedPostCards = `-- name: ListPublishedPostCards :many
+SELECT
+    p.slug,
+    p.title,
+    p.excerpt,
+    p.published_at,
+    p.series_order,
+    a.r2_key  AS cover_key,
+    bs.name   AS series_name,
+    bs.slug   AS series_slug,
+    GREATEST(1, CEIL(
+        COALESCE(array_length(regexp_split_to_array(btrim(p.body), '\s+'), 1), 0)::numeric / 200
+    ))::int AS reading_time_mins,
+    COALESCE(
+        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        '{}'
+    )::text[] AS tags
+FROM blog_post p
+LEFT JOIN asset a          ON a.id = p.cover_asset_id AND a.deleted_at IS NULL
+LEFT JOIN blog_series bs   ON bs.id = p.series_id
+LEFT JOIN blog_post_tags pt ON pt.blog_post_id = p.id
+LEFT JOIN tag t            ON t.id = pt.tag_id
+WHERE p.published_at IS NOT NULL
+GROUP BY p.id, a.r2_key, bs.name, bs.slug
+ORDER BY p.published_at DESC
+LIMIT $1
+`
+
+type ListPublishedPostCardsRow struct {
+	Slug            string             `json:"slug"`
+	Title           string             `json:"title"`
+	Excerpt         string             `json:"excerpt"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	SeriesOrder     pgtype.Int4        `json:"series_order"`
+	CoverKey        pgtype.Text        `json:"cover_key"`
+	SeriesName      pgtype.Text        `json:"series_name"`
+	SeriesSlug      pgtype.Text        `json:"series_slug"`
+	ReadingTimeMins int32              `json:"reading_time_mins"`
+	Tags            []string           `json:"tags"`
+}
+
+// Powers GET /api/v1/posts and the /blog list. One row per published post with
+// its tag names, optional series (name + slug + order), and a computed reading
+// time (≈200 wpm over the markdown body, floored at 1 min). Newest first.
+func (q *Queries) ListPublishedPostCards(ctx context.Context, rowLimit int32) ([]ListPublishedPostCardsRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedPostCards, rowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPublishedPostCardsRow{}
+	for rows.Next() {
+		var i ListPublishedPostCardsRow
+		if err := rows.Scan(
+			&i.Slug,
+			&i.Title,
+			&i.Excerpt,
+			&i.PublishedAt,
+			&i.SeriesOrder,
+			&i.CoverKey,
+			&i.SeriesName,
+			&i.SeriesSlug,
+			&i.ReadingTimeMins,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}

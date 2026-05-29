@@ -43,6 +43,8 @@ func NewRouter(d Deps) http.Handler {
 	health := &Health{Pool: d.Pool}
 	profileH := NewProfile(queries)
 	projectsH := NewProjects(queries)
+	postsH := NewPosts(queries)
+	seriesH := NewSeries(queries)
 	authH := NewAuth(AuthDeps{
 		JWTSecret:         d.JWTSecret,
 		AdminPasswordHash: d.AdminPasswordHash,
@@ -58,6 +60,10 @@ func NewRouter(d Deps) http.Handler {
 		r.Get("/profile/resume", profileH.Resume)
 		r.Get("/projects", projectsH.List)
 		r.Get("/projects/{slug}", projectsH.Detail)
+		r.Get("/posts", postsH.List)
+		r.Get("/posts/{slug}", postsH.Detail)
+		r.Get("/series", seriesH.List)
+		r.Get("/series/{slug}", seriesH.Detail)
 
 		// Public auth endpoints — login is rate-limited and logout must work
 		// even with an expired session, so neither sits behind RequireAdmin.
