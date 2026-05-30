@@ -22,3 +22,23 @@ func isoDate(t pgtype.Timestamptz) string {
 	}
 	return t.Time.Format("2006-01-02")
 }
+
+// isoDateOnly formats a pgtype.Date as an ISO date (YYYY-MM-DD), or "" when
+// NULL. Used for non-nullable date columns surfaced in a DTO.
+func isoDateOnly(d pgtype.Date) string {
+	if !d.Valid {
+		return ""
+	}
+	return d.Time.Format("2006-01-02")
+}
+
+// isoDatePtr formats a pgtype.Date as an ISO date (YYYY-MM-DD), returning nil
+// when NULL so the field serialises as JSON `null`. Used for the experience
+// timeline's end_date, where null means the role is current ("Present").
+func isoDatePtr(d pgtype.Date) *string {
+	if !d.Valid {
+		return nil
+	}
+	s := d.Time.Format("2006-01-02")
+	return &s
+}
