@@ -60,6 +60,7 @@ func NewRouter(d Deps) http.Handler {
 	seriesH := NewSeries(queries)
 	experienceH := NewExperience(queries)
 	testimonialsH := NewTestimonials(queries)
+	statsH := NewStats(queries)
 	authH := NewAuth(AuthDeps{
 		JWTSecret:         d.JWTSecret,
 		AdminPasswordHash: d.AdminPasswordHash,
@@ -93,6 +94,8 @@ func NewRouter(d Deps) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(mw.RequireAdmin(d.JWTSecret))
 			r.Route("/admin", func(r chi.Router) {
+				// Dashboard counts for the admin overview (SCRUM-65).
+				r.Get("/stats", statsH.Get)
 				// Resource routes land here in later stories.
 			})
 		})

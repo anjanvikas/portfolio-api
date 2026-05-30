@@ -60,7 +60,7 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	// ---- Social links (5) -------------------------------------------------
 	// Order matches the footer wireframe: GH · LI · TW · YT · LC.
 	socials := []store.UpsertSocialLinkParams{
-		{Name: "github", Url: "https://github.com/anjanvikas2001", SortOrder: 0},
+		{Name: "github", Url: "https://github.com/anjanvikas", SortOrder: 0},
 		{Name: "linkedin", Url: "https://www.linkedin.com/in/anjanvikas/", SortOrder: 1},
 		{Name: "twitter", Url: "https://twitter.com/anjanvikas", SortOrder: 2},
 		{Name: "youtube", Url: "https://youtube.com/@anjanvikas", SortOrder: 3},
