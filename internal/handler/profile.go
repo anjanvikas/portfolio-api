@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -19,9 +20,25 @@ type profileQueries interface {
 	ListSocialLinks(ctx context.Context) ([]store.SocialLink, error)
 }
 
+// resumePresigner mints a temporary download URL for an R2 object. Satisfied by
+// *service.R2Presigner; left nil when R2 is not configured (dev).
+type resumePresigner interface {
+	PresignGetObject(key string, expiry time.Duration) (string, error)
+}
+
+// resumeLinkTTL is how long a presigned resume URL stays valid. Short — the
+// browser follows the redirect immediately.
+const resumeLinkTTL = 5 * time.Minute
+
 // Profile groups the public read-only profile handlers used by the homepage.
+//
+// Presigner + ResumeKey are optional: when set (R2 configured), the resume
+// download is served via a presigned R2 URL; otherwise the handler falls back
+// to the resume_url stored on the profile row.
 type Profile struct {
-	Q profileQueries
+	Q         profileQueries
+	Presigner resumePresigner
+	ResumeKey string
 }
 
 // NewProfile wires the handler against the live sqlc queries.
@@ -82,9 +99,22 @@ func (p *Profile) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, dto)
 }
 
-// Resume handles GET /api/v1/profile/resume. It 302-redirects to the
-// resume_url stored on the profile row. Returns 404 if no resume is set.
+// Resume handles GET /api/v1/profile/resume. When R2 is configured it mints a
+// short-lived presigned URL for the resume PDF and 302-redirects to it;
+// otherwise it falls back to the resume_url stored on the profile row. Returns
+// 404 if neither is available.
 func (p *Profile) Resume(w http.ResponseWriter, r *http.Request) {
+	if p.Presigner != nil && p.ResumeKey != "" {
+		url, err := p.Presigner.PresignGetObject(p.ResumeKey, resumeLinkTTL)
+		if err != nil {
+			slog.ErrorContext(r.Context(), "presign resume", slog.String("error", err.Error()))
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+		http.Redirect(w, r, url, http.StatusFound)
+		return
+	}
+
 	prof, err := p.Q.GetProfile(r.Context())
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

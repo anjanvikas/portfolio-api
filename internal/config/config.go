@@ -17,6 +17,10 @@ type Config struct {
 	R2SecretKey        string
 	R2BucketName       string
 	R2Endpoint         string
+	R2ResumeKey        string
+	ResendAPIKey       string
+	ContactFromEmail   string
+	ContactToEmail     string
 	CORSAllowedOrigins []string
 	CookieSecure       bool
 }
@@ -31,6 +35,10 @@ func Load() (*Config, error) {
 		R2SecretKey:        os.Getenv("R2_SECRET_KEY"),
 		R2BucketName:       os.Getenv("R2_BUCKET_NAME"),
 		R2Endpoint:         os.Getenv("R2_ENDPOINT"),
+		R2ResumeKey:        getenvDefault("R2_RESUME_KEY", "resume.pdf"),
+		ResendAPIKey:       os.Getenv("RESEND_API_KEY"),
+		ContactFromEmail:   getenvDefault("CONTACT_FROM_EMAIL", "Portfolio <onboarding@resend.dev>"),
+		ContactToEmail:     os.Getenv("CONTACT_TO_EMAIL"),
 		CORSAllowedOrigins: parseCSV(getenvDefault("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
 		CookieSecure:       parseBool(getenvDefault("COOKIE_SECURE", "false")),
 	}
@@ -56,6 +64,24 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// R2Configured reports whether real R2 credentials are present. The shipped
+// .env.example carries placeholder values (empty keys, an "<account-id>"
+// endpoint); when those are in effect the resume download falls back to the
+// stored resume_url instead of presigning against a bucket that doesn't exist.
+func (c *Config) R2Configured() bool {
+	return c.R2AccessKey != "" &&
+		c.R2SecretKey != "" &&
+		c.R2BucketName != "" &&
+		c.R2Endpoint != "" &&
+		!strings.Contains(c.R2Endpoint, "<")
+}
+
+// MailerConfigured reports whether Resend can actually send. When false the
+// contact form uses the LogMailer (messages are logged, not emailed).
+func (c *Config) MailerConfigured() bool {
+	return c.ResendAPIKey != "" && c.ContactToEmail != ""
 }
 
 func getenvDefault(key, fallback string) string {

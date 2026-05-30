@@ -13,6 +13,7 @@ import (
 	"github.com/anjanvikas2001/portfolio-api/internal/config"
 	"github.com/anjanvikas2001/portfolio-api/internal/handler"
 	"github.com/anjanvikas2001/portfolio-api/internal/logger"
+	"github.com/anjanvikas2001/portfolio-api/internal/service"
 	"github.com/anjanvikas2001/portfolio-api/internal/store"
 )
 
@@ -41,12 +42,36 @@ func main() {
 	defer pool.Close()
 	slog.Info("database connected", slog.String("host", pool.Config().ConnConfig.Host))
 
+	// Contact email: Resend when credentials are present, otherwise a dev
+	// fallback that logs the message instead of sending it.
+	var mailer service.Mailer
+	if cfg.MailerConfigured() {
+		mailer = service.NewResendMailer(cfg.ResendAPIKey, cfg.ContactFromEmail, cfg.ContactToEmail)
+		slog.Info("contact email via Resend", slog.String("to", cfg.ContactToEmail))
+	} else {
+		mailer = service.LogMailer{}
+		slog.Warn("Resend not configured (RESEND_API_KEY/CONTACT_TO_EMAIL) — contact form will log messages, not email them")
+	}
+
+	// Resume download: presign against R2 when configured, else the handler
+	// falls back to the stored resume_url.
+	var presigner *service.R2Presigner
+	if cfg.R2Configured() {
+		presigner = service.NewR2Presigner(cfg.R2AccessKey, cfg.R2SecretKey, cfg.R2BucketName, cfg.R2Endpoint)
+		slog.Info("resume download via presigned R2 URL", slog.String("key", cfg.R2ResumeKey))
+	} else {
+		slog.Warn("R2 not configured — resume download falls back to stored resume_url")
+	}
+
 	router := handler.NewRouter(handler.Deps{
 		Pool:               pool,
 		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
 		JWTSecret:          cfg.JWTSecret,
 		AdminPasswordHash:  cfg.AdminPasswordHash,
 		CookieSecure:       cfg.CookieSecure,
+		Mailer:             mailer,
+		ResumePresigner:    presigner,
+		ResumeKey:          cfg.R2ResumeKey,
 	})
 
 	srv := &http.Server{
