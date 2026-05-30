@@ -79,9 +79,9 @@ func (p *Posts) List(w http.ResponseWriter, r *http.Request) {
 			Slug:    row.Slug,
 			Title:   row.Title,
 			Excerpt: row.Excerpt,
-			// cover_key is the R2 object key; empty until SCRUM-16 wires real
-			// asset hosting, in which case the UI falls back to a chartreuse slab.
-			CoverURL:        row.CoverKey.String,
+			// cover_key carries the post's cover_url (set in the admin editor);
+			// empty when unset, and the UI falls back to a chartreuse slab.
+			CoverURL:        row.CoverKey,
 			PublishedAt:     isoDate(row.PublishedAt),
 			ReadingTimeMins: row.ReadingTimeMins,
 			Tags:            row.Tags,
@@ -136,7 +136,7 @@ func (p *Posts) Detail(w http.ResponseWriter, r *http.Request) {
 		Title:           row.Title,
 		Excerpt:         row.Excerpt,
 		Body:            row.Body,
-		CoverURL:        row.CoverKey.String,
+		CoverURL:        row.CoverKey,
 		PublishedAt:     isoDate(row.PublishedAt),
 		ReadingTimeMins: row.ReadingTimeMins,
 		Tags:            row.Tags,

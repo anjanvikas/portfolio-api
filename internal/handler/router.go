@@ -61,6 +61,7 @@ func NewRouter(d Deps) http.Handler {
 	experienceH := NewExperience(queries)
 	testimonialsH := NewTestimonials(queries)
 	statsH := NewStats(queries)
+	adminPostsH := NewAdminPosts(queries)
 	authH := NewAuth(AuthDeps{
 		JWTSecret:         d.JWTSecret,
 		AdminPasswordHash: d.AdminPasswordHash,
@@ -96,7 +97,18 @@ func NewRouter(d Deps) http.Handler {
 			r.Route("/admin", func(r chi.Router) {
 				// Dashboard counts for the admin overview (SCRUM-65).
 				r.Get("/stats", statsH.Get)
-				// Resource routes land here in later stories.
+
+				// Blog post CRUD (SCRUM-66).
+				r.Get("/posts", adminPostsH.List)
+				r.Post("/posts", adminPostsH.Create)
+				r.Get("/posts/{id}", adminPostsH.Get)
+				r.Put("/posts/{id}", adminPostsH.Update)
+				r.Delete("/posts/{id}", adminPostsH.Delete)
+				r.Post("/posts/{id}/publish", adminPostsH.Publish)
+
+				// Selectors backing the editor's series + tag inputs.
+				r.Get("/series", adminPostsH.ListSeries)
+				r.Get("/tags", adminPostsH.ListTags)
 			})
 		})
 	})

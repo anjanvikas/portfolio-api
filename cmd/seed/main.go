@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/anjanvikas2001/portfolio-api/internal/config"
+	"github.com/anjanvikas2001/portfolio-api/internal/content"
 	"github.com/anjanvikas2001/portfolio-api/internal/store"
 )
 
@@ -131,10 +132,11 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 		Slug:        "part-1-design-tokens",
 		Title:       "Part 1 — Locking the design tokens before writing a line of code",
 		Excerpt:     "Why I drew the type ramp and color system in Figma first, and the trade-offs that fell out.",
-		Body:        seriesPart1Body,
-		SeriesID:    series.ID,
-		SeriesOrder: int4(1),
-		PublishedAt: ts(2026, 5, 10),
+		Body:            seriesPart1Body,
+		SeriesID:        series.ID,
+		SeriesOrder:     int4(1),
+		PublishedAt:     ts(2026, 5, 10),
+		ReadingTimeMins: content.ReadingTimeMins(seriesPart1Body),
 	})
 	if err != nil {
 		return fmt.Errorf("post 1: %w", err)
@@ -144,10 +146,11 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 		Slug:        "part-2-stack-decisions",
 		Title:       "Part 2 — Picking Go + sqlc over GORM",
 		Excerpt:     "Compile-time SQL safety beats ORM ergonomics, even at 10k req/day.",
-		Body:        seriesPart2Body,
-		SeriesID:    series.ID,
-		SeriesOrder: int4(2),
-		PublishedAt: ts(2026, 5, 17),
+		Body:            seriesPart2Body,
+		SeriesID:        series.ID,
+		SeriesOrder:     int4(2),
+		PublishedAt:     ts(2026, 5, 17),
+		ReadingTimeMins: content.ReadingTimeMins(seriesPart2Body),
 	})
 	if err != nil {
 		return fmt.Errorf("post 2: %w", err)
@@ -157,8 +160,9 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 		Slug:        "scratch-notes-pgx-v5",
 		Title:       "Scratch notes — pgx v5 nullable types",
 		Excerpt:     "pgtype.Text is fine. Stop wrapping it in *string.",
-		Body:        standalonePostBody,
-		PublishedAt: ts(2026, 5, 22),
+		Body:            standalonePostBody,
+		PublishedAt:     ts(2026, 5, 22),
+		ReadingTimeMins: content.ReadingTimeMins(standalonePostBody),
 	})
 	if err != nil {
 		return fmt.Errorf("standalone post: %w", err)

@@ -28,6 +28,39 @@ func (q *Queries) GetBlogSeriesBySlug(ctx context.Context, slug string) (BlogSer
 	return i, err
 }
 
+const listAllSeries = `-- name: ListAllSeries :many
+SELECT id, slug, name FROM blog_series ORDER BY name
+`
+
+type ListAllSeriesRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Slug string      `json:"slug"`
+	Name string      `json:"name"`
+}
+
+// Powers the admin editor's series selector. Unlike ListSeriesWithCounts this
+// returns every series, including ones whose posts are all still drafts, so a
+// new post can be assigned to a freshly created series.
+func (q *Queries) ListAllSeries(ctx context.Context) ([]ListAllSeriesRow, error) {
+	rows, err := q.db.Query(ctx, listAllSeries)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAllSeriesRow{}
+	for rows.Next() {
+		var i ListAllSeriesRow
+		if err := rows.Scan(&i.ID, &i.Slug, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPublishedPostsBySeriesSlug = `-- name: ListPublishedPostsBySeriesSlug :many
 SELECT
     p.title,

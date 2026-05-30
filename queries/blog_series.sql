@@ -9,6 +9,12 @@ RETURNING *;
 -- name: GetBlogSeriesBySlug :one
 SELECT * FROM blog_series WHERE slug = $1;
 
+-- name: ListAllSeries :many
+-- Powers the admin editor's series selector. Unlike ListSeriesWithCounts this
+-- returns every series, including ones whose posts are all still drafts, so a
+-- new post can be assigned to a freshly created series.
+SELECT id, slug, name FROM blog_series ORDER BY name;
+
 -- name: ListSeriesWithCounts :many
 -- Powers GET /api/v1/series. Returns every series that has at least one
 -- published post, with the count of published posts. The INNER JOIN drops

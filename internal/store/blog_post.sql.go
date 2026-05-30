@@ -11,6 +11,151 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearBlogPostTags = `-- name: ClearBlogPostTags :exec
+DELETE FROM blog_post_tags WHERE blog_post_id = $1
+`
+
+// Drops all tag links for a post so the handler can re-link the submitted set
+// (tags are replaced wholesale on each save).
+func (q *Queries) ClearBlogPostTags(ctx context.Context, blogPostID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearBlogPostTags, blogPostID)
+	return err
+}
+
+const createBlogPost = `-- name: CreateBlogPost :one
+INSERT INTO blog_post (slug, title, excerpt, body, cover_url, series_id, series_order, published_at, reading_time_mins)
+VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $9
+)
+RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url
+`
+
+type CreateBlogPostParams struct {
+	Slug            string             `json:"slug"`
+	Title           string             `json:"title"`
+	Excerpt         string             `json:"excerpt"`
+	Body            string             `json:"body"`
+	CoverUrl        string             `json:"cover_url"`
+	SeriesID        pgtype.UUID        `json:"series_id"`
+	SeriesOrder     pgtype.Int4        `json:"series_order"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	ReadingTimeMins int32              `json:"reading_time_mins"`
+}
+
+// Plain insert (not an upsert): a duplicate slug raises a unique-violation the
+// handler maps to 409, rather than silently overwriting another post.
+func (q *Queries) CreateBlogPost(ctx context.Context, arg CreateBlogPostParams) (BlogPost, error) {
+	row := q.db.QueryRow(ctx, createBlogPost,
+		arg.Slug,
+		arg.Title,
+		arg.Excerpt,
+		arg.Body,
+		arg.CoverUrl,
+		arg.SeriesID,
+		arg.SeriesOrder,
+		arg.PublishedAt,
+		arg.ReadingTimeMins,
+	)
+	var i BlogPost
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Excerpt,
+		&i.Body,
+		&i.CoverAssetID,
+		&i.SeriesID,
+		&i.SeriesOrder,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ReadingTimeMins,
+		&i.CoverUrl,
+	)
+	return i, err
+}
+
+const deleteBlogPost = `-- name: DeleteBlogPost :execrows
+DELETE FROM blog_post WHERE id = $1
+`
+
+// Hard delete; blog_post_tags rows cascade. Returns the affected-row count so
+// the handler can 404 on an unknown id.
+func (q *Queries) DeleteBlogPost(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteBlogPost, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getAdminPost = `-- name: GetAdminPost :one
+SELECT
+    p.id,
+    p.slug,
+    p.title,
+    p.excerpt,
+    p.body,
+    p.cover_url,
+    p.series_id,
+    p.series_order,
+    p.published_at,
+    p.reading_time_mins,
+    bs.name AS series_name,
+    bs.slug AS series_slug,
+    COALESCE(
+        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        '{}'
+    )::text[] AS tags
+FROM blog_post p
+LEFT JOIN blog_series bs    ON bs.id = p.series_id
+LEFT JOIN blog_post_tags pt ON pt.blog_post_id = p.id
+LEFT JOIN tag t             ON t.id = pt.tag_id
+WHERE p.id = $1
+GROUP BY p.id, bs.name, bs.slug
+`
+
+type GetAdminPostRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	Slug            string             `json:"slug"`
+	Title           string             `json:"title"`
+	Excerpt         string             `json:"excerpt"`
+	Body            string             `json:"body"`
+	CoverUrl        string             `json:"cover_url"`
+	SeriesID        pgtype.UUID        `json:"series_id"`
+	SeriesOrder     pgtype.Int4        `json:"series_order"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	ReadingTimeMins int32              `json:"reading_time_mins"`
+	SeriesName      pgtype.Text        `json:"series_name"`
+	SeriesSlug      pgtype.Text        `json:"series_slug"`
+	Tags            []string           `json:"tags"`
+}
+
+// Loads a single post (draft or published) into the editor, with its series ref
+// and tag names.
+func (q *Queries) GetAdminPost(ctx context.Context, id pgtype.UUID) (GetAdminPostRow, error) {
+	row := q.db.QueryRow(ctx, getAdminPost, id)
+	var i GetAdminPostRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Excerpt,
+		&i.Body,
+		&i.CoverUrl,
+		&i.SeriesID,
+		&i.SeriesOrder,
+		&i.PublishedAt,
+		&i.ReadingTimeMins,
+		&i.SeriesName,
+		&i.SeriesSlug,
+		&i.Tags,
+	)
+	return i, err
+}
+
 const getPublishedPostBySlug = `-- name: GetPublishedPostBySlug :one
 SELECT
     p.slug,
@@ -19,24 +164,21 @@ SELECT
     p.body,
     p.published_at,
     p.series_order,
-    a.r2_key  AS cover_key,
+    p.cover_url AS cover_key,
     bs.name   AS series_name,
     bs.slug   AS series_slug,
-    GREATEST(1, CEIL(
-        COALESCE(array_length(regexp_split_to_array(btrim(p.body), '\s+'), 1), 0)::numeric / 200
-    ))::int AS reading_time_mins,
+    p.reading_time_mins,
     COALESCE(
         array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM blog_post p
-LEFT JOIN asset a          ON a.id = p.cover_asset_id AND a.deleted_at IS NULL
 LEFT JOIN blog_series bs   ON bs.id = p.series_id
 LEFT JOIN blog_post_tags pt ON pt.blog_post_id = p.id
 LEFT JOIN tag t            ON t.id = pt.tag_id
 WHERE p.slug = $1
   AND p.published_at IS NOT NULL
-GROUP BY p.id, a.r2_key, bs.name, bs.slug
+GROUP BY p.id, bs.name, bs.slug
 `
 
 type GetPublishedPostBySlugRow struct {
@@ -46,7 +188,7 @@ type GetPublishedPostBySlugRow struct {
 	Body            string             `json:"body"`
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	SeriesOrder     pgtype.Int4        `json:"series_order"`
-	CoverKey        pgtype.Text        `json:"cover_key"`
+	CoverKey        string             `json:"cover_key"`
 	SeriesName      pgtype.Text        `json:"series_name"`
 	SeriesSlug      pgtype.Text        `json:"series_slug"`
 	ReadingTimeMins int32              `json:"reading_time_mins"`
@@ -91,8 +233,68 @@ func (q *Queries) LinkBlogPostTag(ctx context.Context, arg LinkBlogPostTagParams
 	return err
 }
 
+const listAdminPosts = `-- name: ListAdminPosts :many
+
+SELECT
+    p.id,
+    p.slug,
+    p.title,
+    p.published_at,
+    p.reading_time_mins,
+    p.updated_at,
+    bs.name AS series_name
+FROM blog_post p
+LEFT JOIN blog_series bs ON bs.id = p.series_id
+ORDER BY (p.published_at IS NULL) DESC, p.published_at DESC NULLS FIRST, p.updated_at DESC
+`
+
+type ListAdminPostsRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	Slug            string             `json:"slug"`
+	Title           string             `json:"title"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	ReadingTimeMins int32              `json:"reading_time_mins"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	SeriesName      pgtype.Text        `json:"series_name"`
+}
+
+// ===========================================================================
+// Admin CRUD (SCRUM-66) — these include drafts (published_at IS NULL), unlike
+// the public queries above.
+// ===========================================================================
+// Powers the admin posts list table. Every post, drafts first (newest edited),
+// then published newest-first. Carries just what the table renders plus the
+// series name for context.
+func (q *Queries) ListAdminPosts(ctx context.Context) ([]ListAdminPostsRow, error) {
+	rows, err := q.db.Query(ctx, listAdminPosts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAdminPostsRow{}
+	for rows.Next() {
+		var i ListAdminPostsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.PublishedAt,
+			&i.ReadingTimeMins,
+			&i.UpdatedAt,
+			&i.SeriesName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBlogPosts = `-- name: ListBlogPosts :many
-SELECT id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at FROM blog_post
+SELECT id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url FROM blog_post
 WHERE published_at IS NOT NULL
 ORDER BY published_at DESC
 `
@@ -118,6 +320,8 @@ func (q *Queries) ListBlogPosts(ctx context.Context) ([]BlogPost, error) {
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ReadingTimeMins,
+			&i.CoverUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -136,23 +340,20 @@ SELECT
     p.excerpt,
     p.published_at,
     p.series_order,
-    a.r2_key  AS cover_key,
+    p.cover_url AS cover_key,
     bs.name   AS series_name,
     bs.slug   AS series_slug,
-    GREATEST(1, CEIL(
-        COALESCE(array_length(regexp_split_to_array(btrim(p.body), '\s+'), 1), 0)::numeric / 200
-    ))::int AS reading_time_mins,
+    p.reading_time_mins,
     COALESCE(
         array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM blog_post p
-LEFT JOIN asset a          ON a.id = p.cover_asset_id AND a.deleted_at IS NULL
 LEFT JOIN blog_series bs   ON bs.id = p.series_id
 LEFT JOIN blog_post_tags pt ON pt.blog_post_id = p.id
 LEFT JOIN tag t            ON t.id = pt.tag_id
 WHERE p.published_at IS NOT NULL
-GROUP BY p.id, a.r2_key, bs.name, bs.slug
+GROUP BY p.id, bs.name, bs.slug
 ORDER BY p.published_at DESC
 LIMIT $1
 `
@@ -163,7 +364,7 @@ type ListPublishedPostCardsRow struct {
 	Excerpt         string             `json:"excerpt"`
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	SeriesOrder     pgtype.Int4        `json:"series_order"`
-	CoverKey        pgtype.Text        `json:"cover_key"`
+	CoverKey        string             `json:"cover_key"`
 	SeriesName      pgtype.Text        `json:"series_name"`
 	SeriesSlug      pgtype.Text        `json:"series_slug"`
 	ReadingTimeMins int32              `json:"reading_time_mins"`
@@ -171,8 +372,8 @@ type ListPublishedPostCardsRow struct {
 }
 
 // Powers GET /api/v1/posts and the /blog list. One row per published post with
-// its tag names, optional series (name + slug + order), and a computed reading
-// time (≈200 wpm over the markdown body, floored at 1 min). Newest first.
+// its tag names, optional series (name + slug + order), and the stored reading
+// time (saved on every admin write). Newest first.
 func (q *Queries) ListPublishedPostCards(ctx context.Context, rowLimit int32) ([]ListPublishedPostCardsRow, error) {
 	rows, err := q.db.Query(ctx, listPublishedPostCards, rowLimit)
 	if err != nil {
@@ -204,42 +405,78 @@ func (q *Queries) ListPublishedPostCards(ctx context.Context, rowLimit int32) ([
 	return items, nil
 }
 
-const upsertBlogPost = `-- name: UpsertBlogPost :one
-INSERT INTO blog_post (slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (slug) DO UPDATE
-SET title          = EXCLUDED.title,
-    excerpt        = EXCLUDED.excerpt,
-    body           = EXCLUDED.body,
-    cover_asset_id = EXCLUDED.cover_asset_id,
-    series_id      = EXCLUDED.series_id,
-    series_order   = EXCLUDED.series_order,
-    published_at   = EXCLUDED.published_at,
-    updated_at     = now()
-RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at
+const publishBlogPost = `-- name: PublishBlogPost :one
+UPDATE blog_post
+SET published_at = COALESCE(published_at, now()),
+    updated_at   = now()
+WHERE id = $1
+RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url
 `
 
-type UpsertBlogPostParams struct {
-	Slug         string             `json:"slug"`
-	Title        string             `json:"title"`
-	Excerpt      string             `json:"excerpt"`
-	Body         string             `json:"body"`
-	CoverAssetID pgtype.UUID        `json:"cover_asset_id"`
-	SeriesID     pgtype.UUID        `json:"series_id"`
-	SeriesOrder  pgtype.Int4        `json:"series_order"`
-	PublishedAt  pgtype.Timestamptz `json:"published_at"`
+// Promotes a draft to published. COALESCE preserves the original publish date
+// if the post was already live (re-publish is a no-op on the timestamp).
+func (q *Queries) PublishBlogPost(ctx context.Context, id pgtype.UUID) (BlogPost, error) {
+	row := q.db.QueryRow(ctx, publishBlogPost, id)
+	var i BlogPost
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Excerpt,
+		&i.Body,
+		&i.CoverAssetID,
+		&i.SeriesID,
+		&i.SeriesOrder,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ReadingTimeMins,
+		&i.CoverUrl,
+	)
+	return i, err
 }
 
-func (q *Queries) UpsertBlogPost(ctx context.Context, arg UpsertBlogPostParams) (BlogPost, error) {
-	row := q.db.QueryRow(ctx, upsertBlogPost,
+const updateBlogPost = `-- name: UpdateBlogPost :one
+UPDATE blog_post
+SET slug              = $1,
+    title             = $2,
+    excerpt           = $3,
+    body              = $4,
+    cover_url         = $5,
+    series_id         = $6,
+    series_order      = $7,
+    reading_time_mins = $8,
+    updated_at        = now()
+WHERE id = $9
+RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url
+`
+
+type UpdateBlogPostParams struct {
+	Slug            string      `json:"slug"`
+	Title           string      `json:"title"`
+	Excerpt         string      `json:"excerpt"`
+	Body            string      `json:"body"`
+	CoverUrl        string      `json:"cover_url"`
+	SeriesID        pgtype.UUID `json:"series_id"`
+	SeriesOrder     pgtype.Int4 `json:"series_order"`
+	ReadingTimeMins int32       `json:"reading_time_mins"`
+	ID              pgtype.UUID `json:"id"`
+}
+
+// Updates every editable field by id. Deliberately does NOT touch published_at:
+// "Save Draft" must never unpublish a live post, and publishing is owned solely
+// by PublishBlogPost. Returns no rows when the id is unknown → handler 404s.
+func (q *Queries) UpdateBlogPost(ctx context.Context, arg UpdateBlogPostParams) (BlogPost, error) {
+	row := q.db.QueryRow(ctx, updateBlogPost,
 		arg.Slug,
 		arg.Title,
 		arg.Excerpt,
 		arg.Body,
-		arg.CoverAssetID,
+		arg.CoverUrl,
 		arg.SeriesID,
 		arg.SeriesOrder,
-		arg.PublishedAt,
+		arg.ReadingTimeMins,
+		arg.ID,
 	)
 	var i BlogPost
 	err := row.Scan(
@@ -254,6 +491,69 @@ func (q *Queries) UpsertBlogPost(ctx context.Context, arg UpsertBlogPostParams) 
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReadingTimeMins,
+		&i.CoverUrl,
+	)
+	return i, err
+}
+
+const upsertBlogPost = `-- name: UpsertBlogPost :one
+INSERT INTO blog_post (slug, title, excerpt, body, cover_url, series_id, series_order, published_at, reading_time_mins)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (slug) DO UPDATE
+SET title             = EXCLUDED.title,
+    excerpt           = EXCLUDED.excerpt,
+    body              = EXCLUDED.body,
+    cover_url         = EXCLUDED.cover_url,
+    series_id         = EXCLUDED.series_id,
+    series_order      = EXCLUDED.series_order,
+    published_at      = EXCLUDED.published_at,
+    reading_time_mins = EXCLUDED.reading_time_mins,
+    updated_at        = now()
+RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url
+`
+
+type UpsertBlogPostParams struct {
+	Slug            string             `json:"slug"`
+	Title           string             `json:"title"`
+	Excerpt         string             `json:"excerpt"`
+	Body            string             `json:"body"`
+	CoverUrl        string             `json:"cover_url"`
+	SeriesID        pgtype.UUID        `json:"series_id"`
+	SeriesOrder     pgtype.Int4        `json:"series_order"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	ReadingTimeMins int32              `json:"reading_time_mins"`
+}
+
+// Used by the seed script. The admin CRUD (SCRUM-66) uses CreateBlogPost /
+// UpdateBlogPost instead so it can key on id and surface slug collisions.
+func (q *Queries) UpsertBlogPost(ctx context.Context, arg UpsertBlogPostParams) (BlogPost, error) {
+	row := q.db.QueryRow(ctx, upsertBlogPost,
+		arg.Slug,
+		arg.Title,
+		arg.Excerpt,
+		arg.Body,
+		arg.CoverUrl,
+		arg.SeriesID,
+		arg.SeriesOrder,
+		arg.PublishedAt,
+		arg.ReadingTimeMins,
+	)
+	var i BlogPost
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Excerpt,
+		&i.Body,
+		&i.CoverAssetID,
+		&i.SeriesID,
+		&i.SeriesOrder,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ReadingTimeMins,
+		&i.CoverUrl,
 	)
 	return i, err
 }

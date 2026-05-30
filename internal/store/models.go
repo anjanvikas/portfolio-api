@@ -21,17 +21,19 @@ type Asset struct {
 }
 
 type BlogPost struct {
-	ID           pgtype.UUID        `json:"id"`
-	Slug         string             `json:"slug"`
-	Title        string             `json:"title"`
-	Excerpt      string             `json:"excerpt"`
-	Body         string             `json:"body"`
-	CoverAssetID pgtype.UUID        `json:"cover_asset_id"`
-	SeriesID     pgtype.UUID        `json:"series_id"`
-	SeriesOrder  pgtype.Int4        `json:"series_order"`
-	PublishedAt  pgtype.Timestamptz `json:"published_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID              pgtype.UUID        `json:"id"`
+	Slug            string             `json:"slug"`
+	Title           string             `json:"title"`
+	Excerpt         string             `json:"excerpt"`
+	Body            string             `json:"body"`
+	CoverAssetID    pgtype.UUID        `json:"cover_asset_id"`
+	SeriesID        pgtype.UUID        `json:"series_id"`
+	SeriesOrder     pgtype.Int4        `json:"series_order"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ReadingTimeMins int32              `json:"reading_time_mins"`
+	CoverUrl        string             `json:"cover_url"`
 }
 
 type BlogPostTag struct {

@@ -14,6 +14,16 @@ func uuidString(u pgtype.UUID) string {
 	return uuid.UUID(u.Bytes).String()
 }
 
+// parseUUID parses a canonical UUID string into a valid pgtype.UUID, used for
+// path params and request-body ids. Returns an error for malformed input.
+func parseUUID(s string) (pgtype.UUID, error) {
+	parsed, err := uuid.Parse(s)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return pgtype.UUID{Bytes: parsed, Valid: true}, nil
+}
+
 // isoDate formats a pgtype.Timestamptz as an ISO date (YYYY-MM-DD), or "" when
 // NULL. The marketing site shows ISO dates everywhere (engineer audience).
 func isoDate(t pgtype.Timestamptz) string {

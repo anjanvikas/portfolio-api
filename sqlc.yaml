@@ -5,6 +5,7 @@ sql:
     schema:
       - "migrations/000001_init.up.sql"
       - "migrations/000002_project_featured.up.sql"
+      - "migrations/000003_blog_post_reading_time.up.sql"
     gen:
       go:
         package: "store"
