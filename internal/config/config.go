@@ -17,6 +17,7 @@ type Config struct {
 	R2SecretKey        string
 	R2BucketName       string
 	R2Endpoint         string
+	R2PublicBaseURL    string
 	R2ResumeKey        string
 	ResendAPIKey       string
 	ContactFromEmail   string
@@ -35,6 +36,7 @@ func Load() (*Config, error) {
 		R2SecretKey:        os.Getenv("R2_SECRET_KEY"),
 		R2BucketName:       os.Getenv("R2_BUCKET_NAME"),
 		R2Endpoint:         os.Getenv("R2_ENDPOINT"),
+		R2PublicBaseURL:    os.Getenv("R2_PUBLIC_BASE_URL"),
 		R2ResumeKey:        getenvDefault("R2_RESUME_KEY", "resume.pdf"),
 		ResendAPIKey:       os.Getenv("RESEND_API_KEY"),
 		ContactFromEmail:   getenvDefault("CONTACT_FROM_EMAIL", "Portfolio <onboarding@resend.dev>"),

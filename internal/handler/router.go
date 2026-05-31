@@ -22,10 +22,12 @@ type Deps struct {
 	AdminPasswordHash  string
 	CookieSecure       bool
 	Mailer             service.Mailer
-	// ResumePresigner is nil when R2 is not configured; the resume endpoint
-	// then falls back to the stored resume_url.
-	ResumePresigner *service.R2Presigner
-	ResumeKey       string
+	// Presigner is nil when R2 is not configured; the resume endpoint then falls
+	// back to the stored resume_url and the asset upload endpoints return 503.
+	// One instance serves both resume GET presigning and asset PUT presigning.
+	Presigner     *service.R2Presigner
+	ResumeKey     string
+	DocxConverter service.DocxConverter
 }
 
 // NewRouter builds the top-level Chi router with the global middleware stack
@@ -48,11 +50,13 @@ func NewRouter(d Deps) http.Handler {
 	queries := store.New(d.Pool)
 	health := &Health{Pool: d.Pool}
 	profileH := NewProfile(queries)
+	adminAssetsH := NewAdminAssets(queries)
 	// Wire R2 presigning only when configured; the nil check keeps the handler
 	// out of the nil-interface trap (a typed-nil pointer is a non-nil interface).
-	if d.ResumePresigner != nil {
-		profileH.Presigner = d.ResumePresigner
+	if d.Presigner != nil {
+		profileH.Presigner = d.Presigner
 		profileH.ResumeKey = d.ResumeKey
+		adminAssetsH.Presigner = d.Presigner
 	}
 	contactH := NewContact(d.Mailer)
 	projectsH := NewProjects(queries)
@@ -62,6 +66,7 @@ func NewRouter(d Deps) http.Handler {
 	testimonialsH := NewTestimonials(queries)
 	statsH := NewStats(queries)
 	adminPostsH := NewAdminPosts(queries)
+	adminConvertH := NewAdminConvert(d.DocxConverter)
 	authH := NewAuth(AuthDeps{
 		JWTSecret:         d.JWTSecret,
 		AdminPasswordHash: d.AdminPasswordHash,
@@ -109,6 +114,17 @@ func NewRouter(d Deps) http.Handler {
 				// Selectors backing the editor's series + tag inputs.
 				r.Get("/series", adminPostsH.ListSeries)
 				r.Get("/tags", adminPostsH.ListTags)
+
+				// Asset upload pipeline (SCRUM-67): presign a direct
+				// browser→R2 PUT, register the uploaded object, list the
+				// registry, soft-delete a row.
+				r.Post("/assets/presign", adminAssetsH.Presign)
+				r.Post("/assets", adminAssetsH.Register)
+				r.Get("/assets", adminAssetsH.List)
+				r.Delete("/assets/{id}", adminAssetsH.Delete)
+
+				// Docx → markdown conversion (file never stored).
+				r.Post("/convert/docx", adminConvertH.Docx)
 			})
 		})
 	})

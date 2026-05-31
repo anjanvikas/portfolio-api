@@ -53,15 +53,21 @@ func main() {
 		slog.Warn("Resend not configured (RESEND_API_KEY/CONTACT_TO_EMAIL) — contact form will log messages, not email them")
 	}
 
-	// Resume download: presign against R2 when configured, else the handler
-	// falls back to the stored resume_url.
+	// R2 presigner: powers both the resume download (GET presign) and the asset
+	// upload pipeline (PUT presign + public URLs). Nil when R2 isn't configured,
+	// in which case the resume falls back to the stored URL and the admin asset
+	// endpoints return 503.
 	var presigner *service.R2Presigner
 	if cfg.R2Configured() {
-		presigner = service.NewR2Presigner(cfg.R2AccessKey, cfg.R2SecretKey, cfg.R2BucketName, cfg.R2Endpoint)
-		slog.Info("resume download via presigned R2 URL", slog.String("key", cfg.R2ResumeKey))
+		presigner = service.NewR2Presigner(cfg.R2AccessKey, cfg.R2SecretKey, cfg.R2BucketName, cfg.R2Endpoint, cfg.R2PublicBaseURL)
+		slog.Info("R2 presigning enabled", slog.String("resume_key", cfg.R2ResumeKey), slog.Bool("public_base_set", cfg.R2PublicBaseURL != ""))
 	} else {
-		slog.Warn("R2 not configured — resume download falls back to stored resume_url")
+		slog.Warn("R2 not configured — resume download falls back to stored resume_url; asset uploads disabled")
 	}
+
+	// Docx→markdown conversion shells out to pandoc. The handler reports 503 at
+	// call time if the binary is missing, so wiring it unconditionally is safe.
+	converter := service.NewPandocConverter()
 
 	router := handler.NewRouter(handler.Deps{
 		Pool:               pool,
@@ -70,8 +76,9 @@ func main() {
 		AdminPasswordHash:  cfg.AdminPasswordHash,
 		CookieSecure:       cfg.CookieSecure,
 		Mailer:             mailer,
-		ResumePresigner:    presigner,
+		Presigner:          presigner,
 		ResumeKey:          cfg.R2ResumeKey,
+		DocxConverter:      converter,
 	})
 
 	srv := &http.Server{
