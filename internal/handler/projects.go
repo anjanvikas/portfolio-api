@@ -30,7 +30,8 @@ type projectQueries interface {
 // Projects groups the public read-only project handlers used by the homepage
 // featured strip and the projects index.
 type Projects struct {
-	Q projectQueries
+	Q          projectQueries
+	Normalizer urlNormalizer
 }
 
 // NewProjects wires the handler against the live sqlc queries.
@@ -73,7 +74,7 @@ func (p *Projects) List(w http.ResponseWriter, r *http.Request) {
 			Summary: row.Summary,
 			// cover_key is the project's cover_url (empty when unset); the UI
 			// falls back to a colored cover slab.
-			CoverURL: row.CoverKey,
+			CoverURL: nz(p.Normalizer, row.CoverKey),
 			Tags:     row.Tags,
 		})
 	}
@@ -117,12 +118,12 @@ func (p *Projects) Detail(w http.ResponseWriter, r *http.Request) {
 		Title:        row.Title,
 		Tagline:      row.Tagline,
 		Summary:      row.Summary,
-		BodyOverview: row.BodyOverview,
-		BodyWhyBuilt: row.BodyWhyBuilt,
-		BodyLearning: row.BodyLearning,
+		BodyOverview: nzBody(p.Normalizer, row.BodyOverview),
+		BodyWhyBuilt: nzBody(p.Normalizer, row.BodyWhyBuilt),
+		BodyLearning: nzBody(p.Normalizer, row.BodyLearning),
 		// cover_key is the project's cover_url (empty when unset); the UI
 		// falls back to a colored cover slab.
-		CoverURL: row.CoverKey,
+		CoverURL: nz(p.Normalizer, row.CoverKey),
 		RepoURL:  row.RepoUrl.String,
 		LiveURL:  row.LiveUrl.String,
 		Tags:     row.Tags,

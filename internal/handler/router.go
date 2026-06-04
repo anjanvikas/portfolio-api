@@ -61,6 +61,7 @@ func NewRouter(d Deps) http.Handler {
 	if d.Presigner != nil {
 		profileH.Presigner = d.Presigner
 		profileH.ResumeKey = d.ResumeKey
+		profileH.Normalizer = d.Presigner
 		adminAssetsH.Presigner = d.Presigner
 	}
 	// Wire the OG image pipeline (SCRUM-69) only when both the generator and
@@ -70,6 +71,10 @@ func NewRouter(d Deps) http.Handler {
 	contactH := NewContact(d.Mailer)
 	projectsH := NewProjects(queries)
 	postsH := NewPosts(queries)
+	if d.Presigner != nil {
+		projectsH.Normalizer = d.Presigner
+		postsH.Normalizer = d.Presigner
+	}
 	if ogReady {
 		postsH.OG = d.OGGenerator
 		postsH.R2 = d.Presigner

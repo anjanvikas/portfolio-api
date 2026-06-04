@@ -171,6 +171,56 @@ func TestKeyFromPublicURL(t *testing.T) {
 	}
 }
 
+func TestNormalizeURL(t *testing.T) {
+	p := fixedPresigner() // publicBase = https://assets.example.com, endpoint = https://acct123.r2.cloudflarestorage.com, bucket = portfolio-assets
+	legacy := "https://acct123.r2.cloudflarestorage.com/portfolio-assets/assets/headshot.jpg"
+	if got := p.NormalizeURL(legacy); got != "https://assets.example.com/assets/headshot.jpg" {
+		t.Fatalf("legacy URL not rewritten: %q", got)
+	}
+	already := "https://assets.example.com/assets/headshot.jpg"
+	if got := p.NormalizeURL(already); got != already {
+		t.Fatalf("already-public URL should pass through: %q", got)
+	}
+	foreign := "https://example.com/img.png"
+	if got := p.NormalizeURL(foreign); got != foreign {
+		t.Fatalf("foreign URL should pass through: %q", got)
+	}
+	if got := p.NormalizeURL(""); got != "" {
+		t.Fatalf("empty URL should stay empty: %q", got)
+	}
+	// No public base configured — normalize is a no-op even on a legacy URL.
+	np := NewR2Presigner("a", "b", "portfolio-assets", "https://acct123.r2.cloudflarestorage.com", "")
+	if got := np.NormalizeURL(legacy); got != legacy {
+		t.Fatalf("no public base: should pass through: %q", got)
+	}
+	// Nil receiver is safe — handlers without R2 configured can still call.
+	var nilP *R2Presigner
+	if got := nilP.NormalizeURL(legacy); got != legacy {
+		t.Fatalf("nil receiver: should pass through: %q", got)
+	}
+}
+
+func TestNormalizeBody(t *testing.T) {
+	p := fixedPresigner()
+	body := "Header text.\n\n![alt](https://acct123.r2.cloudflarestorage.com/portfolio-assets/assets/diagram.png)\n\nMore words and another: https://acct123.r2.cloudflarestorage.com/portfolio-assets/og/post.png ."
+	want := "Header text.\n\n![alt](https://assets.example.com/assets/diagram.png)\n\nMore words and another: https://assets.example.com/og/post.png ."
+	if got := p.NormalizeBody(body); got != want {
+		t.Fatalf("body normalize:\n got=%q\nwant=%q", got, want)
+	}
+	// Idempotent: running twice yields the same result.
+	if got := p.NormalizeBody(p.NormalizeBody(body)); got != want {
+		t.Fatal("normalize body must be idempotent")
+	}
+	// Empty body and no-base cases.
+	if got := p.NormalizeBody(""); got != "" {
+		t.Fatalf("empty body: %q", got)
+	}
+	np := NewR2Presigner("a", "b", "portfolio-assets", "https://acct123.r2.cloudflarestorage.com", "")
+	if got := np.NormalizeBody(body); got != body {
+		t.Fatal("no public base: body should pass through unchanged")
+	}
+}
+
 func mustParse(t *testing.T, raw string) *url.URL {
 	t.Helper()
 	u, err := url.Parse(raw)

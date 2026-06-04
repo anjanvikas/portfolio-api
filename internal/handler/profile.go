@@ -36,9 +36,10 @@ const resumeLinkTTL = 5 * time.Minute
 // download is served via a presigned R2 URL; otherwise the handler falls back
 // to the resume_url stored on the profile row.
 type Profile struct {
-	Q         profileQueries
-	Presigner resumePresigner
-	ResumeKey string
+	Q          profileQueries
+	Presigner  resumePresigner
+	ResumeKey  string
+	Normalizer urlNormalizer
 }
 
 // NewProfile wires the handler against the live sqlc queries.
@@ -86,11 +87,11 @@ func (p *Profile) Get(w http.ResponseWriter, r *http.Request) {
 	dto := profileDTO{
 		Name:        prof.Name,
 		Headline:    prof.Headline,
-		Bio:         prof.Bio,
+		Bio:         nzBody(p.Normalizer, prof.Bio),
 		Location:    prof.Location,
 		Email:       prof.Email,
-		AvatarURL:   prof.AvatarUrl.String,
-		ResumeURL:   prof.ResumeUrl.String,
+		AvatarURL:   nz(p.Normalizer, prof.AvatarUrl.String),
+		ResumeURL:   nz(p.Normalizer, prof.ResumeUrl.String),
 		SocialLinks: make([]socialLinkDTO, 0, len(links)),
 	}
 	for _, l := range links {
@@ -129,5 +130,5 @@ func (p *Profile) Resume(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	http.Redirect(w, r, prof.ResumeUrl.String, http.StatusFound)
+	http.Redirect(w, r, nz(p.Normalizer, prof.ResumeUrl.String), http.StatusFound)
 }

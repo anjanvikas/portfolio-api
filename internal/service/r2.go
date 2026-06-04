@@ -63,6 +63,38 @@ func (p *R2Presigner) PublicURL(key string) string {
 	return p.endpoint + "/" + p.bucket + "/" + escapePath(key)
 }
 
+// NormalizeURL rewrites a legacy private-endpoint asset URL onto the configured
+// public base, so values stored before R2_PUBLIC_BASE_URL was set still resolve
+// for anonymous GETs (SCRUM-78). Returns the input unchanged when:
+//   - no public base is configured (dev with R2 unset), or
+//   - the URL doesn't start with this presigner's path-style endpoint prefix
+//     (i.e. it's foreign or already on the public base).
+//
+// This is the read-time equivalent of rewriting rows in the DB; new writes go
+// through PublicURL which already emits public-base URLs.
+func (p *R2Presigner) NormalizeURL(rawURL string) string {
+	if p == nil || p.publicBase == "" {
+		return rawURL
+	}
+	legacyPrefix := p.endpoint + "/" + p.bucket + "/"
+	if strings.HasPrefix(rawURL, legacyPrefix) {
+		return p.publicBase + "/" + strings.TrimPrefix(rawURL, legacyPrefix)
+	}
+	return rawURL
+}
+
+// NormalizeBody rewrites legacy private-endpoint URLs that appear inline inside
+// a markdown body (e.g. ![](https://<acct>.r2.cloudflarestorage.com/<bucket>/...))
+// onto the configured public base. A simple string replace is safe — the
+// legacy prefix is opaque and only appears as the head of a full URL.
+func (p *R2Presigner) NormalizeBody(body string) string {
+	if p == nil || p.publicBase == "" {
+		return body
+	}
+	legacyPrefix := p.endpoint + "/" + p.bucket + "/"
+	return strings.ReplaceAll(body, legacyPrefix, p.publicBase+"/")
+}
+
 // KeyFromPublicURL recovers the object key from a public URL produced by
 // PublicURL, by stripping the known base prefix. Returns ("", false) when the
 // URL doesn't match the configured base (so the caller can reject a forged or

@@ -41,10 +41,11 @@ type postQueries interface {
 // /og-image endpoint will lazily regenerate when og_image_url is empty. With
 // any of them unset, that endpoint 404s on an unset image.
 type Posts struct {
-	Q       postQueries
-	OG      service.OGImageGenerator
-	R2      ogUploader
-	SiteURL string
+	Q          postQueries
+	OG         service.OGImageGenerator
+	R2         ogUploader
+	SiteURL    string
+	Normalizer urlNormalizer
 }
 
 // NewPosts wires the handler against the live sqlc queries.
@@ -92,7 +93,7 @@ func (p *Posts) List(w http.ResponseWriter, r *http.Request) {
 			Excerpt: row.Excerpt,
 			// cover_key carries the post's cover_url (set in the admin editor);
 			// empty when unset, and the UI falls back to a chartreuse slab.
-			CoverURL:        row.CoverKey,
+			CoverURL:        nz(p.Normalizer, row.CoverKey),
 			PublishedAt:     isoDate(row.PublishedAt),
 			ReadingTimeMins: row.ReadingTimeMins,
 			Tags:            row.Tags,
@@ -147,9 +148,9 @@ func (p *Posts) Detail(w http.ResponseWriter, r *http.Request) {
 		Slug:            row.Slug,
 		Title:           row.Title,
 		Excerpt:         row.Excerpt,
-		Body:            row.Body,
-		CoverURL:        row.CoverKey,
-		OGImageURL:      row.OgImageUrl,
+		Body:            nzBody(p.Normalizer, row.Body),
+		CoverURL:        nz(p.Normalizer, row.CoverKey),
+		OGImageURL:      nz(p.Normalizer, row.OgImageUrl),
 		PublishedAt:     isoDate(row.PublishedAt),
 		ReadingTimeMins: row.ReadingTimeMins,
 		Tags:            row.Tags,
@@ -217,7 +218,7 @@ func (p *Posts) OGImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if row.OgImageUrl != "" {
-		http.Redirect(w, r, row.OgImageUrl, http.StatusFound)
+		http.Redirect(w, r, nz(p.Normalizer, row.OgImageUrl), http.StatusFound)
 		return
 	}
 
