@@ -66,6 +66,10 @@ func NewRouter(d Deps) http.Handler {
 	testimonialsH := NewTestimonials(queries)
 	statsH := NewStats(queries)
 	adminPostsH := NewAdminPosts(queries)
+	adminProjectsH := NewAdminProjects(queries)
+	adminExperienceH := NewAdminExperience(queries)
+	adminTestimonialsH := NewAdminTestimonials(queries)
+	adminProfileH := NewAdminProfile(queries)
 	adminConvertH := NewAdminConvert(d.DocxConverter)
 	authH := NewAuth(AuthDeps{
 		JWTSecret:         d.JWTSecret,
@@ -114,6 +118,34 @@ func NewRouter(d Deps) http.Handler {
 				// Selectors backing the editor's series + tag inputs.
 				r.Get("/series", adminPostsH.ListSeries)
 				r.Get("/tags", adminPostsH.ListTags)
+
+				// Project CRUD (SCRUM-68).
+				r.Get("/projects", adminProjectsH.List)
+				r.Post("/projects", adminProjectsH.Create)
+				r.Get("/projects/{id}", adminProjectsH.Get)
+				r.Put("/projects/{id}", adminProjectsH.Update)
+				r.Delete("/projects/{id}", adminProjectsH.Delete)
+				r.Post("/projects/{id}/publish", adminProjectsH.Publish)
+
+				// Experience CRUD + drag-to-reorder (SCRUM-68).
+				r.Get("/experience", adminExperienceH.List)
+				r.Post("/experience", adminExperienceH.Create)
+				r.Post("/experience/reorder", adminExperienceH.Reorder)
+				r.Get("/experience/{id}", adminExperienceH.Get)
+				r.Put("/experience/{id}", adminExperienceH.Update)
+				r.Delete("/experience/{id}", adminExperienceH.Delete)
+
+				// Testimonial CRUD + visibility toggle (SCRUM-68).
+				r.Get("/testimonials", adminTestimonialsH.List)
+				r.Post("/testimonials", adminTestimonialsH.Create)
+				r.Get("/testimonials/{id}", adminTestimonialsH.Get)
+				r.Put("/testimonials/{id}", adminTestimonialsH.Update)
+				r.Delete("/testimonials/{id}", adminTestimonialsH.Delete)
+				r.Patch("/testimonials/{id}/visibility", adminTestimonialsH.SetVisibility)
+
+				// Profile editor (SCRUM-68).
+				r.Get("/profile", adminProfileH.Get)
+				r.Put("/profile", adminProfileH.Update)
 
 				// Asset upload pipeline (SCRUM-67): presign a direct
 				// browser→R2 PUT, register the uploaded object, list the

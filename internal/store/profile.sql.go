@@ -33,6 +33,60 @@ func (q *Queries) GetProfile(ctx context.Context) (Profile, error) {
 	return i, err
 }
 
+const updateProfile = `-- name: UpdateProfile :one
+UPDATE profile
+SET name       = $2,
+    headline   = $3,
+    bio        = $4,
+    location   = $5,
+    email      = $6,
+    resume_url = $7,
+    avatar_url = $8,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, name, headline, bio, location, email, resume_url, avatar_url, created_at, updated_at
+`
+
+type UpdateProfileParams struct {
+	ID        pgtype.UUID `json:"id"`
+	Name      string      `json:"name"`
+	Headline  string      `json:"headline"`
+	Bio       string      `json:"bio"`
+	Location  string      `json:"location"`
+	Email     string      `json:"email"`
+	ResumeUrl pgtype.Text `json:"resume_url"`
+	AvatarUrl pgtype.Text `json:"avatar_url"`
+}
+
+// Admin edit of the singleton profile row (SCRUM-68). Updated by id, which the
+// handler reads from GetProfile first.
+func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, updateProfile,
+		arg.ID,
+		arg.Name,
+		arg.Headline,
+		arg.Bio,
+		arg.Location,
+		arg.Email,
+		arg.ResumeUrl,
+		arg.AvatarUrl,
+	)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Headline,
+		&i.Bio,
+		&i.Location,
+		&i.Email,
+		&i.ResumeUrl,
+		&i.AvatarUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const upsertProfile = `-- name: UpsertProfile :one
 INSERT INTO profile (name, headline, bio, location, email, resume_url, avatar_url)
 VALUES ($1, $2, $3, $4, $5, $6, $7)

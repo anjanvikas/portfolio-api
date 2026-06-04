@@ -71,10 +71,9 @@ func (p *Projects) List(w http.ResponseWriter, r *http.Request) {
 			Slug:    row.Slug,
 			Title:   row.Title,
 			Summary: row.Summary,
-			// cover_key is the R2 object key; until SCRUM-16 wires real asset
-			// hosting the seed leaves it empty and the UI falls back to a
-			// colored cover slab.
-			CoverURL: row.CoverKey.String,
+			// cover_key is the project's cover_url (empty when unset); the UI
+			// falls back to a colored cover slab.
+			CoverURL: row.CoverKey,
 			Tags:     row.Tags,
 		})
 	}
@@ -121,9 +120,9 @@ func (p *Projects) Detail(w http.ResponseWriter, r *http.Request) {
 		BodyOverview: row.BodyOverview,
 		BodyWhyBuilt: row.BodyWhyBuilt,
 		BodyLearning: row.BodyLearning,
-		// cover_key is the R2 object key; empty until SCRUM-16 wires real asset
-		// hosting, in which case the UI falls back to a colored cover slab.
-		CoverURL: row.CoverKey.String,
+		// cover_key is the project's cover_url (empty when unset); the UI
+		// falls back to a colored cover slab.
+		CoverURL: row.CoverKey,
 		RepoURL:  row.RepoUrl.String,
 		LiveURL:  row.LiveUrl.String,
 		Tags:     row.Tags,

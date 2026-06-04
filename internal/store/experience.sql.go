@@ -11,10 +11,89 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createExperience = `-- name: CreateExperience :one
+INSERT INTO experience (company, role, location, start_date, end_date, description, sort_order)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, company, role, location, start_date, end_date, description, sort_order, created_at
+`
+
+type CreateExperienceParams struct {
+	Company     string      `json:"company"`
+	Role        string      `json:"role"`
+	Location    string      `json:"location"`
+	StartDate   pgtype.Date `json:"start_date"`
+	EndDate     pgtype.Date `json:"end_date"`
+	Description string      `json:"description"`
+	SortOrder   int32       `json:"sort_order"`
+}
+
+func (q *Queries) CreateExperience(ctx context.Context, arg CreateExperienceParams) (Experience, error) {
+	row := q.db.QueryRow(ctx, createExperience,
+		arg.Company,
+		arg.Role,
+		arg.Location,
+		arg.StartDate,
+		arg.EndDate,
+		arg.Description,
+		arg.SortOrder,
+	)
+	var i Experience
+	err := row.Scan(
+		&i.ID,
+		&i.Company,
+		&i.Role,
+		&i.Location,
+		&i.StartDate,
+		&i.EndDate,
+		&i.Description,
+		&i.SortOrder,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteExperience = `-- name: DeleteExperience :execrows
+DELETE FROM experience WHERE id = $1
+`
+
+func (q *Queries) DeleteExperience(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExperience, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getExperience = `-- name: GetExperience :one
+
+SELECT id, company, role, location, start_date, end_date, description, sort_order, created_at FROM experience WHERE id = $1
+`
+
+// ---------------------------------------------------------------------------
+// Admin CRUD (SCRUM-68).
+// ---------------------------------------------------------------------------
+func (q *Queries) GetExperience(ctx context.Context, id pgtype.UUID) (Experience, error) {
+	row := q.db.QueryRow(ctx, getExperience, id)
+	var i Experience
+	err := row.Scan(
+		&i.ID,
+		&i.Company,
+		&i.Role,
+		&i.Location,
+		&i.StartDate,
+		&i.EndDate,
+		&i.Description,
+		&i.SortOrder,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listExperience = `-- name: ListExperience :many
 SELECT id, company, role, location, start_date, end_date, description, sort_order, created_at FROM experience ORDER BY sort_order DESC, start_date DESC
 `
 
+// Display + admin order: highest sort_order first, newest start as the tiebreak.
 func (q *Queries) ListExperience(ctx context.Context) ([]Experience, error) {
 	rows, err := q.db.Query(ctx, listExperience)
 	if err != nil {
@@ -45,6 +124,80 @@ func (q *Queries) ListExperience(ctx context.Context) ([]Experience, error) {
 	return items, nil
 }
 
+const nextExperienceSortOrder = `-- name: NextExperienceSortOrder :one
+SELECT COALESCE(MAX(sort_order) + 1, 0)::int AS next FROM experience
+`
+
+// The sort_order to give a new entry so it lands at the top (newest) of the list.
+func (q *Queries) NextExperienceSortOrder(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, nextExperienceSortOrder)
+	var next int32
+	err := row.Scan(&next)
+	return next, err
+}
+
+const setExperienceSortOrder = `-- name: SetExperienceSortOrder :exec
+UPDATE experience SET sort_order = $2 WHERE id = $1
+`
+
+type SetExperienceSortOrderParams struct {
+	ID        pgtype.UUID `json:"id"`
+	SortOrder int32       `json:"sort_order"`
+}
+
+// One step of a drag-to-reorder save: assign a row its new sort_order.
+func (q *Queries) SetExperienceSortOrder(ctx context.Context, arg SetExperienceSortOrderParams) error {
+	_, err := q.db.Exec(ctx, setExperienceSortOrder, arg.ID, arg.SortOrder)
+	return err
+}
+
+const updateExperience = `-- name: UpdateExperience :one
+UPDATE experience
+SET company     = $2,
+    role        = $3,
+    location    = $4,
+    start_date  = $5,
+    end_date    = $6,
+    description = $7
+WHERE id = $1
+RETURNING id, company, role, location, start_date, end_date, description, sort_order, created_at
+`
+
+type UpdateExperienceParams struct {
+	ID          pgtype.UUID `json:"id"`
+	Company     string      `json:"company"`
+	Role        string      `json:"role"`
+	Location    string      `json:"location"`
+	StartDate   pgtype.Date `json:"start_date"`
+	EndDate     pgtype.Date `json:"end_date"`
+	Description string      `json:"description"`
+}
+
+func (q *Queries) UpdateExperience(ctx context.Context, arg UpdateExperienceParams) (Experience, error) {
+	row := q.db.QueryRow(ctx, updateExperience,
+		arg.ID,
+		arg.Company,
+		arg.Role,
+		arg.Location,
+		arg.StartDate,
+		arg.EndDate,
+		arg.Description,
+	)
+	var i Experience
+	err := row.Scan(
+		&i.ID,
+		&i.Company,
+		&i.Role,
+		&i.Location,
+		&i.StartDate,
+		&i.EndDate,
+		&i.Description,
+		&i.SortOrder,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const upsertExperience = `-- name: UpsertExperience :one
 INSERT INTO experience (company, role, location, start_date, end_date, description, sort_order)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -66,6 +219,7 @@ type UpsertExperienceParams struct {
 	SortOrder   int32       `json:"sort_order"`
 }
 
+// Seed/idempotent path: keyed by (company, role, start_date).
 func (q *Queries) UpsertExperience(ctx context.Context, arg UpsertExperienceParams) (Experience, error) {
 	row := q.db.QueryRow(ctx, upsertExperience,
 		arg.Company,

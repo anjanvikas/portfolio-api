@@ -1,9 +1,29 @@
 package handler
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+// nullText wraps a string as a nullable text column: an empty string becomes
+// SQL NULL. Reading it back via pgtype.Text.String yields "" again, so the
+// round-trip is transparent. Used for optional URL fields (repo/live/resume/
+// avatar).
+func nullText(s string) pgtype.Text {
+	return pgtype.Text{String: s, Valid: s != ""}
+}
+
+// parseISODate parses a YYYY-MM-DD string into a pgtype.Date. Used for the
+// experience start/end date request fields.
+func parseISODate(s string) (pgtype.Date, error) {
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return pgtype.Date{}, err
+	}
+	return pgtype.Date{Time: t, Valid: true}, nil
+}
 
 // uuidString renders a pgtype.UUID as its canonical hyphenated string, or "" if
 // the value is NULL. Used when a DB id is surfaced in a JSON DTO.

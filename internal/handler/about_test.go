@@ -107,7 +107,7 @@ type fakeTestimonialQ struct {
 	err  error
 }
 
-func (f *fakeTestimonialQ) ListTestimonials(ctx context.Context) ([]store.Testimonial, error) {
+func (f *fakeTestimonialQ) ListVisibleTestimonials(ctx context.Context) ([]store.Testimonial, error) {
 	return f.rows, f.err
 }
 

@@ -91,6 +91,7 @@ type Project struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	Featured     bool               `json:"featured"`
+	CoverUrl     string             `json:"cover_url"`
 }
 
 type ProjectTag struct {
@@ -122,4 +123,5 @@ type Testimonial struct {
 	AvatarAssetID pgtype.UUID        `json:"avatar_asset_id"`
 	SortOrder     int32              `json:"sort_order"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	Visible       bool               `json:"visible"`
 }

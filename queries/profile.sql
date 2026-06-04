@@ -14,3 +14,18 @@ RETURNING *;
 
 -- name: GetProfile :one
 SELECT * FROM profile LIMIT 1;
+
+-- name: UpdateProfile :one
+-- Admin edit of the singleton profile row (SCRUM-68). Updated by id, which the
+-- handler reads from GetProfile first.
+UPDATE profile
+SET name       = $2,
+    headline   = $3,
+    bio        = $4,
+    location   = $5,
+    email      = $6,
+    resume_url = $7,
+    avatar_url = $8,
+    updated_at = now()
+WHERE id = $1
+RETURNING *;

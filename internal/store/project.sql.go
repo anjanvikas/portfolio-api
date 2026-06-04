@@ -11,6 +11,143 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearProjectTags = `-- name: ClearProjectTags :exec
+DELETE FROM project_tags WHERE project_id = $1
+`
+
+func (q *Queries) ClearProjectTags(ctx context.Context, projectID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearProjectTags, projectID)
+	return err
+}
+
+const createProject = `-- name: CreateProject :one
+INSERT INTO project (
+    slug, title, tagline, summary,
+    body_overview, body_why_built, body_learning,
+    cover_url, repo_url, live_url, featured, sort_order
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+RETURNING id
+`
+
+type CreateProjectParams struct {
+	Slug         string      `json:"slug"`
+	Title        string      `json:"title"`
+	Tagline      string      `json:"tagline"`
+	Summary      string      `json:"summary"`
+	BodyOverview string      `json:"body_overview"`
+	BodyWhyBuilt string      `json:"body_why_built"`
+	BodyLearning string      `json:"body_learning"`
+	CoverUrl     string      `json:"cover_url"`
+	RepoUrl      pgtype.Text `json:"repo_url"`
+	LiveUrl      pgtype.Text `json:"live_url"`
+	Featured     bool        `json:"featured"`
+	SortOrder    int32       `json:"sort_order"`
+}
+
+// New projects are always created as drafts (published_at NULL).
+func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createProject,
+		arg.Slug,
+		arg.Title,
+		arg.Tagline,
+		arg.Summary,
+		arg.BodyOverview,
+		arg.BodyWhyBuilt,
+		arg.BodyLearning,
+		arg.CoverUrl,
+		arg.RepoUrl,
+		arg.LiveUrl,
+		arg.Featured,
+		arg.SortOrder,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const deleteProject = `-- name: DeleteProject :execrows
+DELETE FROM project WHERE id = $1
+`
+
+// Hard delete; project_tags rows cascade.
+func (q *Queries) DeleteProject(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProject, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getAdminProject = `-- name: GetAdminProject :one
+SELECT
+    p.id,
+    p.slug,
+    p.title,
+    p.tagline,
+    p.summary,
+    p.body_overview,
+    p.body_why_built,
+    p.body_learning,
+    p.cover_url,
+    p.repo_url,
+    p.live_url,
+    p.featured,
+    p.sort_order,
+    p.published_at,
+    COALESCE(
+        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        '{}'
+    )::text[] AS tags
+FROM project p
+LEFT JOIN project_tags pt ON pt.project_id = p.id
+LEFT JOIN tag t           ON t.id = pt.tag_id
+WHERE p.id = $1
+GROUP BY p.id
+`
+
+type GetAdminProjectRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Slug         string             `json:"slug"`
+	Title        string             `json:"title"`
+	Tagline      string             `json:"tagline"`
+	Summary      string             `json:"summary"`
+	BodyOverview string             `json:"body_overview"`
+	BodyWhyBuilt string             `json:"body_why_built"`
+	BodyLearning string             `json:"body_learning"`
+	CoverUrl     string             `json:"cover_url"`
+	RepoUrl      pgtype.Text        `json:"repo_url"`
+	LiveUrl      pgtype.Text        `json:"live_url"`
+	Featured     bool               `json:"featured"`
+	SortOrder    int32              `json:"sort_order"`
+	PublishedAt  pgtype.Timestamptz `json:"published_at"`
+	Tags         []string           `json:"tags"`
+}
+
+// Loads one project (any status) into the editor, with its tag names.
+func (q *Queries) GetAdminProject(ctx context.Context, id pgtype.UUID) (GetAdminProjectRow, error) {
+	row := q.db.QueryRow(ctx, getAdminProject, id)
+	var i GetAdminProjectRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Tagline,
+		&i.Summary,
+		&i.BodyOverview,
+		&i.BodyWhyBuilt,
+		&i.BodyLearning,
+		&i.CoverUrl,
+		&i.RepoUrl,
+		&i.LiveUrl,
+		&i.Featured,
+		&i.SortOrder,
+		&i.PublishedAt,
+		&i.Tags,
+	)
+	return i, err
+}
+
 const getProjectBySlug = `-- name: GetProjectBySlug :one
 SELECT
     p.slug,
@@ -23,18 +160,17 @@ SELECT
     p.repo_url,
     p.live_url,
     p.published_at,
-    a.r2_key AS cover_key,
+    p.cover_url AS cover_key,
     COALESCE(
         array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM project p
-LEFT JOIN asset a       ON a.id = p.cover_asset_id AND a.deleted_at IS NULL
 LEFT JOIN project_tags pt ON pt.project_id = p.id
-LEFT JOIN tag t         ON t.id = pt.tag_id
+LEFT JOIN tag t           ON t.id = pt.tag_id
 WHERE p.slug = $1
   AND p.published_at IS NOT NULL
-GROUP BY p.id, a.r2_key
+GROUP BY p.id
 `
 
 type GetProjectBySlugRow struct {
@@ -48,14 +184,14 @@ type GetProjectBySlugRow struct {
 	RepoUrl      pgtype.Text        `json:"repo_url"`
 	LiveUrl      pgtype.Text        `json:"live_url"`
 	PublishedAt  pgtype.Timestamptz `json:"published_at"`
-	CoverKey     pgtype.Text        `json:"cover_key"`
+	CoverKey     string             `json:"cover_key"`
 	Tags         []string           `json:"tags"`
 }
 
 // Powers the project detail page. Returns the full project (all three markdown
-// body sections, repo/live links, meta) plus the cover asset key and the
-// aggregated tag names so the page builds in a single round trip. Only
-// published projects are visible to the public site.
+// body sections, repo/live links, meta) plus the cover URL and the aggregated
+// tag names so the page builds in a single round trip. Only published projects
+// are visible to the public site.
 func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (GetProjectBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getProjectBySlug, slug)
 	var i GetProjectBySlugRow
@@ -92,23 +228,71 @@ func (q *Queries) LinkProjectTag(ctx context.Context, arg LinkProjectTagParams) 
 	return err
 }
 
+const listAdminProjects = `-- name: ListAdminProjects :many
+
+SELECT id, slug, title, sort_order, featured, published_at, updated_at
+FROM project
+ORDER BY (published_at IS NOT NULL), sort_order, updated_at DESC
+`
+
+type ListAdminProjectsRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Slug        string             `json:"slug"`
+	Title       string             `json:"title"`
+	SortOrder   int32              `json:"sort_order"`
+	Featured    bool               `json:"featured"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+// ---------------------------------------------------------------------------
+// Admin CRUD (SCRUM-68). These see drafts as well as published rows.
+// ---------------------------------------------------------------------------
+// The admin projects table: every project, drafts first then by sort order.
+func (q *Queries) ListAdminProjects(ctx context.Context) ([]ListAdminProjectsRow, error) {
+	rows, err := q.db.Query(ctx, listAdminProjects)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAdminProjectsRow{}
+	for rows.Next() {
+		var i ListAdminProjectsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.SortOrder,
+			&i.Featured,
+			&i.PublishedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjectCards = `-- name: ListProjectCards :many
 SELECT
     p.slug,
     p.title,
     p.summary,
-    a.r2_key AS cover_key,
+    p.cover_url AS cover_key,
     COALESCE(
         array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM project p
-LEFT JOIN asset a       ON a.id = p.cover_asset_id AND a.deleted_at IS NULL
 LEFT JOIN project_tags pt ON pt.project_id = p.id
-LEFT JOIN tag t         ON t.id = pt.tag_id
+LEFT JOIN tag t           ON t.id = pt.tag_id
 WHERE p.published_at IS NOT NULL
   AND (NOT $1::boolean OR p.featured = true)
-GROUP BY p.id, a.r2_key
+GROUP BY p.id
 ORDER BY p.sort_order, p.published_at DESC
 LIMIT $2
 `
@@ -119,17 +303,17 @@ type ListProjectCardsParams struct {
 }
 
 type ListProjectCardsRow struct {
-	Slug     string      `json:"slug"`
-	Title    string      `json:"title"`
-	Summary  string      `json:"summary"`
-	CoverKey pgtype.Text `json:"cover_key"`
-	Tags     []string    `json:"tags"`
+	Slug     string   `json:"slug"`
+	Title    string   `json:"title"`
+	Summary  string   `json:"summary"`
+	CoverKey string   `json:"cover_key"`
+	Tags     []string `json:"tags"`
 }
 
-// Powers the homepage "featured work" strip and the projects index. Joins the
-// cover asset (nullable) and aggregates the project's tag names into a single
-// text[] so the handler builds each card in one round trip. When featured_only
-// is true the result is limited to projects flagged for the homepage.
+// Powers the homepage "featured work" strip and the projects index. Aggregates
+// the project's tag names into a single text[] so the handler builds each card
+// in one round trip. When featured_only is true the result is limited to
+// projects flagged for the homepage.
 func (q *Queries) ListProjectCards(ctx context.Context, arg ListProjectCardsParams) ([]ListProjectCardsRow, error) {
 	rows, err := q.db.Query(ctx, listProjectCards, arg.FeaturedOnly, arg.RowLimit)
 	if err != nil {
@@ -157,7 +341,7 @@ func (q *Queries) ListProjectCards(ctx context.Context, arg ListProjectCardsPara
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, slug, title, tagline, summary, body_overview, body_why_built, body_learning, cover_asset_id, repo_url, live_url, sort_order, published_at, created_at, updated_at, featured FROM project
+SELECT id, slug, title, tagline, summary, body_overview, body_why_built, body_learning, cover_asset_id, repo_url, live_url, sort_order, published_at, created_at, updated_at, featured, cover_url FROM project
 WHERE published_at IS NOT NULL
 ORDER BY sort_order, published_at DESC
 `
@@ -188,6 +372,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Featured,
+			&i.CoverUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -197,6 +382,89 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const nextProjectSortOrder = `-- name: NextProjectSortOrder :one
+SELECT COALESCE(MAX(sort_order) + 1, 0)::int AS next FROM project
+`
+
+// The sort_order to give a new project so it lands at the end of the list.
+func (q *Queries) NextProjectSortOrder(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, nextProjectSortOrder)
+	var next int32
+	err := row.Scan(&next)
+	return next, err
+}
+
+const publishProject = `-- name: PublishProject :one
+UPDATE project
+SET published_at = COALESCE(published_at, now()),
+    updated_at   = now()
+WHERE id = $1
+RETURNING id
+`
+
+// Sets published_at to now() the first time; re-publishing keeps the original.
+func (q *Queries) PublishProject(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, publishProject, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const updateProject = `-- name: UpdateProject :one
+UPDATE project
+SET slug           = $2,
+    title          = $3,
+    tagline        = $4,
+    summary        = $5,
+    body_overview  = $6,
+    body_why_built = $7,
+    body_learning  = $8,
+    cover_url      = $9,
+    repo_url       = $10,
+    live_url       = $11,
+    featured       = $12,
+    updated_at     = now()
+WHERE id = $1
+RETURNING id
+`
+
+type UpdateProjectParams struct {
+	ID           pgtype.UUID `json:"id"`
+	Slug         string      `json:"slug"`
+	Title        string      `json:"title"`
+	Tagline      string      `json:"tagline"`
+	Summary      string      `json:"summary"`
+	BodyOverview string      `json:"body_overview"`
+	BodyWhyBuilt string      `json:"body_why_built"`
+	BodyLearning string      `json:"body_learning"`
+	CoverUrl     string      `json:"cover_url"`
+	RepoUrl      pgtype.Text `json:"repo_url"`
+	LiveUrl      pgtype.Text `json:"live_url"`
+	Featured     bool        `json:"featured"`
+}
+
+// Saves the editable fields by id. Deliberately does NOT touch published_at, so
+// saving never unpublishes a live project (the publish endpoint owns that).
+func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, updateProject,
+		arg.ID,
+		arg.Slug,
+		arg.Title,
+		arg.Tagline,
+		arg.Summary,
+		arg.BodyOverview,
+		arg.BodyWhyBuilt,
+		arg.BodyLearning,
+		arg.CoverUrl,
+		arg.RepoUrl,
+		arg.LiveUrl,
+		arg.Featured,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const upsertProject = `-- name: UpsertProject :one
@@ -221,7 +489,7 @@ SET title          = EXCLUDED.title,
     featured       = EXCLUDED.featured,
     published_at   = EXCLUDED.published_at,
     updated_at     = now()
-RETURNING id, slug, title, tagline, summary, body_overview, body_why_built, body_learning, cover_asset_id, repo_url, live_url, sort_order, published_at, created_at, updated_at, featured
+RETURNING id, slug, title, tagline, summary, body_overview, body_why_built, body_learning, cover_asset_id, repo_url, live_url, sort_order, published_at, created_at, updated_at, featured, cover_url
 `
 
 type UpsertProjectParams struct {
@@ -240,6 +508,7 @@ type UpsertProjectParams struct {
 	PublishedAt  pgtype.Timestamptz `json:"published_at"`
 }
 
+// Seed/idempotent path: keyed by slug so a re-seed updates the existing row.
 func (q *Queries) UpsertProject(ctx context.Context, arg UpsertProjectParams) (Project, error) {
 	row := q.db.QueryRow(ctx, upsertProject,
 		arg.Slug,
@@ -274,6 +543,7 @@ func (q *Queries) UpsertProject(ctx context.Context, arg UpsertProjectParams) (P
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Featured,
+		&i.CoverUrl,
 	)
 	return i, err
 }

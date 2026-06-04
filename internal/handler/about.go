@@ -76,7 +76,7 @@ func (e *Experience) List(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 type testimonialQueries interface {
-	ListTestimonials(ctx context.Context) ([]store.Testimonial, error)
+	ListVisibleTestimonials(ctx context.Context) ([]store.Testimonial, error)
 }
 
 // Testimonials serves the public testimonials strip.
@@ -97,10 +97,10 @@ type testimonialDTO struct {
 	Quote         string `json:"quote"`
 }
 
-// List handles GET /api/v1/testimonials, ordered by sort_order. There is no
-// visibility column on the schema, so every testimonial is public.
+// List handles GET /api/v1/testimonials, ordered by sort_order. Only rows
+// flagged visible are returned (the admin toggle controls this, SCRUM-68).
 func (t *Testimonials) List(w http.ResponseWriter, r *http.Request) {
-	rows, err := t.Q.ListTestimonials(r.Context())
+	rows, err := t.Q.ListVisibleTestimonials(r.Context())
 	if err != nil {
 		slog.ErrorContext(r.Context(), "list testimonials", slog.String("error", err.Error()))
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})

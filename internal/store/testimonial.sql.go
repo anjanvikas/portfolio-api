@@ -11,10 +11,87 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const listTestimonials = `-- name: ListTestimonials :many
-SELECT id, author_name, author_role, author_company, quote, avatar_asset_id, sort_order, created_at FROM testimonial ORDER BY sort_order
+const createTestimonial = `-- name: CreateTestimonial :one
+INSERT INTO testimonial (author_name, author_role, author_company, quote, visible, sort_order)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, author_name, author_role, author_company, quote, avatar_asset_id, sort_order, created_at, visible
 `
 
+type CreateTestimonialParams struct {
+	AuthorName    string `json:"author_name"`
+	AuthorRole    string `json:"author_role"`
+	AuthorCompany string `json:"author_company"`
+	Quote         string `json:"quote"`
+	Visible       bool   `json:"visible"`
+	SortOrder     int32  `json:"sort_order"`
+}
+
+func (q *Queries) CreateTestimonial(ctx context.Context, arg CreateTestimonialParams) (Testimonial, error) {
+	row := q.db.QueryRow(ctx, createTestimonial,
+		arg.AuthorName,
+		arg.AuthorRole,
+		arg.AuthorCompany,
+		arg.Quote,
+		arg.Visible,
+		arg.SortOrder,
+	)
+	var i Testimonial
+	err := row.Scan(
+		&i.ID,
+		&i.AuthorName,
+		&i.AuthorRole,
+		&i.AuthorCompany,
+		&i.Quote,
+		&i.AvatarAssetID,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.Visible,
+	)
+	return i, err
+}
+
+const deleteTestimonial = `-- name: DeleteTestimonial :execrows
+DELETE FROM testimonial WHERE id = $1
+`
+
+func (q *Queries) DeleteTestimonial(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTestimonial, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getTestimonial = `-- name: GetTestimonial :one
+
+SELECT id, author_name, author_role, author_company, quote, avatar_asset_id, sort_order, created_at, visible FROM testimonial WHERE id = $1
+`
+
+// ---------------------------------------------------------------------------
+// Admin CRUD (SCRUM-68).
+// ---------------------------------------------------------------------------
+func (q *Queries) GetTestimonial(ctx context.Context, id pgtype.UUID) (Testimonial, error) {
+	row := q.db.QueryRow(ctx, getTestimonial, id)
+	var i Testimonial
+	err := row.Scan(
+		&i.ID,
+		&i.AuthorName,
+		&i.AuthorRole,
+		&i.AuthorCompany,
+		&i.Quote,
+		&i.AvatarAssetID,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.Visible,
+	)
+	return i, err
+}
+
+const listTestimonials = `-- name: ListTestimonials :many
+SELECT id, author_name, author_role, author_company, quote, avatar_asset_id, sort_order, created_at, visible FROM testimonial ORDER BY sort_order
+`
+
+// Admin table: every testimonial regardless of visibility.
 func (q *Queries) ListTestimonials(ctx context.Context) ([]Testimonial, error) {
 	rows, err := q.db.Query(ctx, listTestimonials)
 	if err != nil {
@@ -33,6 +110,7 @@ func (q *Queries) ListTestimonials(ctx context.Context) ([]Testimonial, error) {
 			&i.AvatarAssetID,
 			&i.SortOrder,
 			&i.CreatedAt,
+			&i.Visible,
 		); err != nil {
 			return nil, err
 		}
@@ -44,6 +122,122 @@ func (q *Queries) ListTestimonials(ctx context.Context) ([]Testimonial, error) {
 	return items, nil
 }
 
+const listVisibleTestimonials = `-- name: ListVisibleTestimonials :many
+SELECT id, author_name, author_role, author_company, quote, avatar_asset_id, sort_order, created_at, visible FROM testimonial WHERE visible ORDER BY sort_order
+`
+
+// Public strip: only testimonials flagged visible, in display order.
+func (q *Queries) ListVisibleTestimonials(ctx context.Context) ([]Testimonial, error) {
+	rows, err := q.db.Query(ctx, listVisibleTestimonials)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Testimonial{}
+	for rows.Next() {
+		var i Testimonial
+		if err := rows.Scan(
+			&i.ID,
+			&i.AuthorName,
+			&i.AuthorRole,
+			&i.AuthorCompany,
+			&i.Quote,
+			&i.AvatarAssetID,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.Visible,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const nextTestimonialSortOrder = `-- name: NextTestimonialSortOrder :one
+SELECT COALESCE(MAX(sort_order) + 1, 0)::int AS next FROM testimonial
+`
+
+func (q *Queries) NextTestimonialSortOrder(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, nextTestimonialSortOrder)
+	var next int32
+	err := row.Scan(&next)
+	return next, err
+}
+
+const setTestimonialVisibility = `-- name: SetTestimonialVisibility :one
+UPDATE testimonial SET visible = $2 WHERE id = $1 RETURNING id, author_name, author_role, author_company, quote, avatar_asset_id, sort_order, created_at, visible
+`
+
+type SetTestimonialVisibilityParams struct {
+	ID      pgtype.UUID `json:"id"`
+	Visible bool        `json:"visible"`
+}
+
+func (q *Queries) SetTestimonialVisibility(ctx context.Context, arg SetTestimonialVisibilityParams) (Testimonial, error) {
+	row := q.db.QueryRow(ctx, setTestimonialVisibility, arg.ID, arg.Visible)
+	var i Testimonial
+	err := row.Scan(
+		&i.ID,
+		&i.AuthorName,
+		&i.AuthorRole,
+		&i.AuthorCompany,
+		&i.Quote,
+		&i.AvatarAssetID,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.Visible,
+	)
+	return i, err
+}
+
+const updateTestimonial = `-- name: UpdateTestimonial :one
+UPDATE testimonial
+SET author_name    = $2,
+    author_role    = $3,
+    author_company = $4,
+    quote          = $5,
+    visible        = $6
+WHERE id = $1
+RETURNING id, author_name, author_role, author_company, quote, avatar_asset_id, sort_order, created_at, visible
+`
+
+type UpdateTestimonialParams struct {
+	ID            pgtype.UUID `json:"id"`
+	AuthorName    string      `json:"author_name"`
+	AuthorRole    string      `json:"author_role"`
+	AuthorCompany string      `json:"author_company"`
+	Quote         string      `json:"quote"`
+	Visible       bool        `json:"visible"`
+}
+
+func (q *Queries) UpdateTestimonial(ctx context.Context, arg UpdateTestimonialParams) (Testimonial, error) {
+	row := q.db.QueryRow(ctx, updateTestimonial,
+		arg.ID,
+		arg.AuthorName,
+		arg.AuthorRole,
+		arg.AuthorCompany,
+		arg.Quote,
+		arg.Visible,
+	)
+	var i Testimonial
+	err := row.Scan(
+		&i.ID,
+		&i.AuthorName,
+		&i.AuthorRole,
+		&i.AuthorCompany,
+		&i.Quote,
+		&i.AvatarAssetID,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.Visible,
+	)
+	return i, err
+}
+
 const upsertTestimonial = `-- name: UpsertTestimonial :one
 INSERT INTO testimonial (author_name, author_role, author_company, quote, avatar_asset_id, sort_order)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -52,7 +246,7 @@ SET author_role     = EXCLUDED.author_role,
     author_company  = EXCLUDED.author_company,
     avatar_asset_id = EXCLUDED.avatar_asset_id,
     sort_order      = EXCLUDED.sort_order
-RETURNING id, author_name, author_role, author_company, quote, avatar_asset_id, sort_order, created_at
+RETURNING id, author_name, author_role, author_company, quote, avatar_asset_id, sort_order, created_at, visible
 `
 
 type UpsertTestimonialParams struct {
@@ -64,6 +258,7 @@ type UpsertTestimonialParams struct {
 	SortOrder     int32       `json:"sort_order"`
 }
 
+// Seed/idempotent path: keyed by (author_name, quote).
 func (q *Queries) UpsertTestimonial(ctx context.Context, arg UpsertTestimonialParams) (Testimonial, error) {
 	row := q.db.QueryRow(ctx, upsertTestimonial,
 		arg.AuthorName,
@@ -83,6 +278,7 @@ func (q *Queries) UpsertTestimonial(ctx context.Context, arg UpsertTestimonialPa
 		&i.AvatarAssetID,
 		&i.SortOrder,
 		&i.CreatedAt,
+		&i.Visible,
 	)
 	return i, err
 }
