@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/auth"
+	"github.com/anjanvikas/portfolio-api/internal/auth"
 )
 
 // AuthDeps bundles everything the auth handlers need. JWTSecret signs tokens,

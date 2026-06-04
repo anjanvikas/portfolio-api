@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/config"
-	"github.com/anjanvikas2001/portfolio-api/internal/handler"
-	"github.com/anjanvikas2001/portfolio-api/internal/logger"
-	"github.com/anjanvikas2001/portfolio-api/internal/service"
-	"github.com/anjanvikas2001/portfolio-api/internal/store"
+	"github.com/anjanvikas/portfolio-api/internal/config"
+	"github.com/anjanvikas/portfolio-api/internal/handler"
+	"github.com/anjanvikas/portfolio-api/internal/logger"
+	"github.com/anjanvikas/portfolio-api/internal/service"
+	"github.com/anjanvikas/portfolio-api/internal/store"
 )
 
 func main() {

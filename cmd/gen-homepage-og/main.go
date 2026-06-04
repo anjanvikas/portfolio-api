@@ -24,9 +24,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/config"
-	"github.com/anjanvikas2001/portfolio-api/internal/logger"
-	"github.com/anjanvikas2001/portfolio-api/internal/service"
+	"github.com/anjanvikas/portfolio-api/internal/config"
+	"github.com/anjanvikas/portfolio-api/internal/logger"
+	"github.com/anjanvikas/portfolio-api/internal/service"
 )
 
 func main() {

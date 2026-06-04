@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/store"
+	"github.com/anjanvikas/portfolio-api/internal/store"
 )
 
 // assetQueries is the slice of store.Queries the asset registry needs, declared

@@ -12,9 +12,12 @@ import (
 )
 
 const getProfile = `-- name: GetProfile :one
-SELECT id, name, headline, bio, location, email, resume_url, avatar_url, created_at, updated_at FROM profile LIMIT 1
+SELECT id, name, headline, bio, location, email, resume_url, avatar_url, created_at, updated_at FROM profile ORDER BY updated_at DESC LIMIT 1
 `
 
+// Singleton: if a stray duplicate ever exists (e.g. seed re-run with a changed
+// email before constraints kick in), prefer the most recently updated row so
+// API responses are deterministic.
 func (q *Queries) GetProfile(ctx context.Context) (Profile, error) {
 	row := q.db.QueryRow(ctx, getProfile)
 	var i Profile

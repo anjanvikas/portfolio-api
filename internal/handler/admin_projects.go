@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/store"
+	"github.com/anjanvikas/portfolio-api/internal/store"
 )
 
 // adminProjectQueries is the slice of store.Queries the admin project CRUD

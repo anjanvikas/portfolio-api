@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/service"
+	"github.com/anjanvikas/portfolio-api/internal/service"
 )
 
 type fakeConverter struct {

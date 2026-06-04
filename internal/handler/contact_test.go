@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/service"
+	"github.com/anjanvikas/portfolio-api/internal/service"
 )
 
 type fakeMailer struct {

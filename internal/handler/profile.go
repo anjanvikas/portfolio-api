@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/store"
+	"github.com/anjanvikas/portfolio-api/internal/store"
 )
 
 // profileQueries is the subset of store.Queries used by the public profile

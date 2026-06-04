@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/store"
+	"github.com/anjanvikas/portfolio-api/internal/store"
 )
 
 type fakeAdminProfileQ struct {

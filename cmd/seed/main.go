@@ -14,9 +14,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/config"
-	"github.com/anjanvikas2001/portfolio-api/internal/content"
-	"github.com/anjanvikas2001/portfolio-api/internal/store"
+	"github.com/anjanvikas/portfolio-api/internal/config"
+	"github.com/anjanvikas/portfolio-api/internal/content"
+	"github.com/anjanvikas/portfolio-api/internal/store"
 )
 
 func main() {
@@ -48,9 +48,9 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	// ---- Profile ----------------------------------------------------------
 	if _, err := q.UpsertProfile(ctx, store.UpsertProfileParams{
 		Name:      "Anjan Vikas Reddy",
-		Headline:  "Backend engineer",
-		Bio:       "I build developer tools and back-of-house systems that quietly do the heavy lifting. Currently exploring agents, RAG, and Go.",
-		Location:  "Hyderabad, IN",
+		Headline:  "Senior Software Engineer @ Wells Fargo",
+		Bio:       "I build LLM-powered backend systems — distributed pipelines, GenAI workflows, and IAM platforms at production scale. Currently shipping a 0→1 LLM Risk & Compliance platform at Wells Fargo. Go, Python, Kafka, and a lot of FastAPI.",
+		Location:  "Bengaluru, KA, India",
 		Email:     "anjanvikas2001@gmail.com",
 		ResumeUrl: text("https://example.com/resume.pdf"),
 		AvatarUrl: text("https://example.com/avatar.jpg"),
@@ -63,9 +63,9 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	socials := []store.UpsertSocialLinkParams{
 		{Name: "github", Url: "https://github.com/anjanvikas", SortOrder: 0},
 		{Name: "linkedin", Url: "https://www.linkedin.com/in/anjanvikas/", SortOrder: 1},
-		{Name: "twitter", Url: "https://twitter.com/anjanvikas", SortOrder: 2},
-		{Name: "youtube", Url: "https://youtube.com/@anjanvikas", SortOrder: 3},
-		{Name: "leetcode", Url: "https://leetcode.com/anjanvikas", SortOrder: 4},
+		{Name: "twitter", Url: "https://x.com/Anjanq5ld", SortOrder: 2},
+		{Name: "youtube", Url: "https://www.youtube.com/@Rewiring101", SortOrder: 3},
+		{Name: "leetcode", Url: "https://leetcode.com/u/anjanvikas2001/", SortOrder: 4},
 	}
 	for _, s := range socials {
 		if _, err := q.UpsertSocialLink(ctx, s); err != nil {
@@ -73,24 +73,34 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 		}
 	}
 
-	// ---- Experience (2) ---------------------------------------------------
+	// ---- Experience (3) ---------------------------------------------------
+	// sort_order is newest-first on the /about timeline.
 	experiences := []store.UpsertExperienceParams{
 		{
-			Company:     "Mealmind",
-			Role:        "Founding engineer",
-			Location:    "Remote",
-			StartDate:   date(2024, 6, 1),
+			Company:     "Wells Fargo",
+			Role:        "Senior Software Engineer",
+			Location:    "Bengaluru, KA",
+			StartDate:   date(2025, 10, 1),
 			EndDate:     pgtype.Date{}, // null = current
-			Description: "Built the recipe pipeline, recommendation engine, and admin tooling end-to-end.",
+			Description: "Led 0→1 development of a production-grade LLM-powered IAM Risk & Compliance platform — distributed Kafka + MongoDB pipelines, FastAPI microservices on OpenShift (K8), and async job processing achieving 10ms median submission latency and P99 < 500ms retrieval. Delivered $2.5M+ annual cost savings while leading LLD, code reviews, and a team of 4 engineers.",
+			SortOrder:   2,
+		},
+		{
+			Company:     "Wells Fargo",
+			Role:        "Software Engineer",
+			Location:    "Bengaluru, KA",
+			StartDate:   date(2023, 8, 1),
+			EndDate:     date(2025, 10, 1),
+			Description: "Automated IAM workflows across enterprise platforms (SIMBA, AIMS, ART) responsible for access provisioning across the bank. Analyzed 700+ production assets, identified 34 high-impact workflows covering 33% of system traffic, and shipped scalable automation resilient to form drift. Delivered $13M in cost savings and eliminated 11 FTEs.",
 			SortOrder:   1,
 		},
 		{
-			Company:     "Acme Corp",
-			Role:        "Software engineer",
-			Location:    "Bengaluru, IN",
-			StartDate:   date(2022, 7, 1),
-			EndDate:     date(2024, 5, 31),
-			Description: "Owned the billing service rewrite from Rails to Go. Cut p99 latency by 60%.",
+			Company:     "Mathologic",
+			Role:        "Software Engineering Intern",
+			Location:    "Bengaluru, KA",
+			StartDate:   date(2022, 9, 1),
+			EndDate:     date(2022, 12, 31),
+			Description: "Solved Locomotive Shed Allocation under real-world constraints (capacity, zone preferences, locomotive type); deployed as a RESTful API in Go on internal servers.",
 			SortOrder:   0,
 		},
 	}
@@ -100,7 +110,7 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 		}
 	}
 
-	// ---- Tags (2) ---------------------------------------------------------
+	// ---- Tags -------------------------------------------------------------
 	tagGo, err := q.UpsertTag(ctx, store.UpsertTagParams{Slug: "go", Name: "Go"})
 	if err != nil {
 		return fmt.Errorf("tag go: %w", err)
@@ -117,6 +127,14 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	if err != nil {
 		return fmt.Errorf("tag nextjs: %w", err)
 	}
+	tagPython, err := q.UpsertTag(ctx, store.UpsertTagParams{Slug: "python", Name: "Python"})
+	if err != nil {
+		return fmt.Errorf("tag python: %w", err)
+	}
+	tagLLM, err := q.UpsertTag(ctx, store.UpsertTagParams{Slug: "llm", Name: "LLMs"})
+	if err != nil {
+		return fmt.Errorf("tag llm: %w", err)
+	}
 
 	// ---- Blog series + 2 posts in series + 1 standalone ------------------
 	series, err := q.UpsertBlogSeries(ctx, store.UpsertBlogSeriesParams{
@@ -129,9 +147,9 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	}
 
 	post1, err := q.UpsertBlogPost(ctx, store.UpsertBlogPostParams{
-		Slug:        "part-1-design-tokens",
-		Title:       "Part 1 — Locking the design tokens before writing a line of code",
-		Excerpt:     "Why I drew the type ramp and color system in Figma first, and the trade-offs that fell out.",
+		Slug:            "part-1-design-tokens",
+		Title:           "Part 1 — Locking the design tokens before writing a line of code",
+		Excerpt:         "Why I drew the type ramp and color system in Figma first, and the trade-offs that fell out.",
 		Body:            seriesPart1Body,
 		SeriesID:        series.ID,
 		SeriesOrder:     int4(1),
@@ -143,9 +161,9 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	}
 
 	post2, err := q.UpsertBlogPost(ctx, store.UpsertBlogPostParams{
-		Slug:        "part-2-stack-decisions",
-		Title:       "Part 2 — Picking Go + sqlc over GORM",
-		Excerpt:     "Compile-time SQL safety beats ORM ergonomics, even at 10k req/day.",
+		Slug:            "part-2-stack-decisions",
+		Title:           "Part 2 — Picking Go + sqlc over GORM",
+		Excerpt:         "Compile-time SQL safety beats ORM ergonomics, even at 10k req/day.",
 		Body:            seriesPart2Body,
 		SeriesID:        series.ID,
 		SeriesOrder:     int4(2),
@@ -157,9 +175,9 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	}
 
 	standalone, err := q.UpsertBlogPost(ctx, store.UpsertBlogPostParams{
-		Slug:        "scratch-notes-pgx-v5",
-		Title:       "Scratch notes — pgx v5 nullable types",
-		Excerpt:     "pgtype.Text is fine. Stop wrapping it in *string.",
+		Slug:            "scratch-notes-pgx-v5",
+		Title:           "Scratch notes — pgx v5 nullable types",
+		Excerpt:         "pgtype.Text is fine. Stop wrapping it in *string.",
 		Body:            standalonePostBody,
 		PublishedAt:     ts(2026, 5, 22),
 		ReadingTimeMins: content.ReadingTimeMins(standalonePostBody),
@@ -182,66 +200,66 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	// ---- Projects (3 featured, with markdown sections) -------------------
 	// The homepage "featured work" strip renders up to 3 cards; seed exactly
 	// that many so the section reads as designed. sort_order drives the order.
-	mealmind, err := q.UpsertProject(ctx, store.UpsertProjectParams{
-		Slug:         "mealmind",
-		Title:        "Mealmind",
-		Tagline:      "A spec-driven recipe engine that cooks for you.",
-		Summary:      "Pipeline that ingests recipes, normalises ingredients, and recommends meals based on your pantry.",
-		BodyOverview: projectOverview,
-		BodyWhyBuilt: projectWhyBuilt,
-		BodyLearning: projectLearning,
-		RepoUrl:      text("https://github.com/anjanvikas2001/mealmind"),
-		LiveUrl:      text("https://mealmind.app"),
+	resumeRanker, err := q.UpsertProject(ctx, store.UpsertProjectParams{
+		Slug:         "ai-resume-ranker",
+		Title:        "AI Resume Ranker",
+		Tagline:      "3-stage GenAI pipeline for resume screening.",
+		Summary:      "AI-powered resume screening platform — resume parsing, semantic similarity shortlisting with Sentence-Transformers, and deep LLM-based candidate evaluation.",
+		BodyOverview: resumeRankerOverview,
+		BodyWhyBuilt: resumeRankerWhyBuilt,
+		BodyLearning: resumeRankerLearning,
+		RepoUrl:      text("https://github.com/anjanvikas/ai-resume-ranker"),
 		SortOrder:    0,
-		Featured:     true,
-		PublishedAt:  ts(2026, 4, 1),
-	})
-	if err != nil {
-		return fmt.Errorf("project mealmind: %w", err)
-	}
-
-	carpilot, err := q.UpsertProject(ctx, store.UpsertProjectParams{
-		Slug:         "carpilot",
-		Title:        "CarPilot",
-		Tagline:      "Spec-driven car-buying assistant.",
-		Summary:      "A RAG assistant that reads listings, owner manuals, and recall notices to answer buying questions in plain language.",
-		BodyOverview: "## Overview\n\nCarPilot ingests vehicle listings and documentation, embeds them, and answers buyer questions with citations back to the source.\n",
-		BodyWhyBuilt: "## Why I built this\n\nBuying a used car means drowning in PDFs and forum threads. CarPilot turns that pile into a conversation.\n",
-		BodyLearning: "## Learning journey\n\nChunking strategy mattered more than model choice; recall notices needed their own retrieval path.\n",
-		RepoUrl:      text("https://github.com/anjanvikas2001/carpilot"),
-		SortOrder:    1,
 		Featured:     true,
 		PublishedAt:  ts(2026, 3, 1),
 	})
 	if err != nil {
-		return fmt.Errorf("project carpilot: %w", err)
+		return fmt.Errorf("project ai-resume-ranker: %w", err)
 	}
 
-	renderStrats, err := q.UpsertProject(ctx, store.UpsertProjectParams{
-		Slug:         "render-strategies",
-		Title:        "Render Strategies",
-		Tagline:      "Side-by-side demos of Next.js rendering modes.",
-		Summary:      "Interactive reference comparing SSR, SSG, ISR, and edge rendering with live timing waterfalls for each.",
-		BodyOverview: "## Overview\n\nA teaching playground that renders the same page four ways and shows the network waterfall for each strategy side by side.\n",
-		BodyWhyBuilt: "## Why I built this\n\nEvery Next.js rendering explainer is prose. I wanted one you could poke at.\n",
-		BodyLearning: "## Learning journey\n\nThe edge runtime's constraints forced a much leaner data layer than I expected.\n",
-		RepoUrl:      text("https://github.com/anjanvikas2001/render-strategies"),
-		LiveUrl:      text("https://render-strategies.vercel.app"),
-		SortOrder:    2,
+	ragDeepDive, err := q.UpsertProject(ctx, store.UpsertProjectParams{
+		Slug:         "rag-deep-dive",
+		Title:        "RAG Deep Dive",
+		Tagline:      "Conversational AI with hybrid search + GraphRAG.",
+		Summary:      "Production-grade conversational AI with hybrid retrieval (dense + BM25 + cross-encoder reranking) across Qdrant and Neo4j, plus a transparent pipeline explainer UI.",
+		BodyOverview: ragDeepDiveOverview,
+		BodyWhyBuilt: ragDeepDiveWhyBuilt,
+		BodyLearning: ragDeepDiveLearning,
+		RepoUrl:      text("https://github.com/anjanvikas/rag-deep-dive"),
+		SortOrder:    1,
 		Featured:     true,
 		PublishedAt:  ts(2026, 2, 1),
 	})
 	if err != nil {
-		return fmt.Errorf("project render-strategies: %w", err)
+		return fmt.Errorf("project rag-deep-dive: %w", err)
+	}
+
+	portfolioProj, err := q.UpsertProject(ctx, store.UpsertProjectParams{
+		Slug:         "this-portfolio",
+		Title:        "This portfolio",
+		Tagline:      "Neo-brutalist portfolio built deliberately.",
+		Summary:      "Tokens-first Next.js 16 + Go + Postgres portfolio. sqlc, pgx, golang-migrate on the backend; ISR + design-token-driven components on the frontend.",
+		BodyOverview: portfolioOverview,
+		BodyWhyBuilt: portfolioWhyBuilt,
+		BodyLearning: portfolioLearning,
+		RepoUrl:      text("https://github.com/anjanvikas/portfolio"),
+		SortOrder:    2,
+		Featured:     true,
+		PublishedAt:  ts(2026, 5, 1),
+	})
+	if err != nil {
+		return fmt.Errorf("project portfolio: %w", err)
 	}
 
 	for _, link := range []store.LinkProjectTagParams{
-		{ProjectID: mealmind.ID, TagID: tagGo.ID},
-		{ProjectID: mealmind.ID, TagID: tagDesign.ID},
-		{ProjectID: carpilot.ID, TagID: tagGo.ID},
-		{ProjectID: carpilot.ID, TagID: tagRag.ID},
-		{ProjectID: renderStrats.ID, TagID: tagNext.ID},
-		{ProjectID: renderStrats.ID, TagID: tagDesign.ID},
+		{ProjectID: resumeRanker.ID, TagID: tagPython.ID},
+		{ProjectID: resumeRanker.ID, TagID: tagLLM.ID},
+		{ProjectID: ragDeepDive.ID, TagID: tagPython.ID},
+		{ProjectID: ragDeepDive.ID, TagID: tagRag.ID},
+		{ProjectID: ragDeepDive.ID, TagID: tagLLM.ID},
+		{ProjectID: portfolioProj.ID, TagID: tagGo.ID},
+		{ProjectID: portfolioProj.ID, TagID: tagNext.ID},
+		{ProjectID: portfolioProj.ID, TagID: tagDesign.ID},
 	} {
 		if err := q.LinkProjectTag(ctx, link); err != nil {
 			return fmt.Errorf("link project tag: %w", err)
@@ -354,21 +372,61 @@ const standalonePostBody = "# pgx v5 nullable types\n\n" +
 	"t = pgtype.Text{String: \"hi\", Valid: true}\n" +
 	"```\n"
 
-const projectOverview = "## Overview\n\n" +
-	"Mealmind is a spec-driven recipe engine. You describe what's in the\n" +
-	"pantry and what you want to eat this week; it returns a shopping list\n" +
-	"and a plan.\n\n" +
-	"- Ingest from RSS, structured-data sites, and a manual editor.\n" +
-	"- Normalise ingredients via a controlled vocabulary.\n" +
-	"- Recommend meals using a small cosine-similarity engine.\n"
+const resumeRankerOverview = "## Overview\n\n" +
+	"AI Resume Ranker is a screening platform that turns a stack of PDFs\n" +
+	"and a job description into a ranked shortlist with explainable scores.\n\n" +
+	"- Parse resumes into structured candidate profiles.\n" +
+	"- Shortlist with Sentence-Transformer embeddings for semantic similarity.\n" +
+	"- Deep-evaluate the top candidates with an LLM rubric.\n" +
+	"- Async background jobs with real-time progress polling for bulk uploads.\n"
 
-const projectWhyBuilt = "## Why I built this\n\n" +
-	"I was tired of meal-planning apps that assumed an empty fridge. The\n" +
-	"interesting constraint is *what you already have*, not *what you could\n" +
-	"buy*. Mealmind starts from your pantry.\n"
+const resumeRankerWhyBuilt = "## Why I built this\n\n" +
+	"Keyword filters are too dumb; reading 500 resumes by hand is too slow.\n" +
+	"I wanted a pipeline that combines cheap-and-fast semantic shortlisting\n" +
+	"with expensive-and-careful LLM evaluation — and shows its work.\n"
 
-const projectLearning = "## Learning journey\n\n" +
-	"Three things I learned that I would not have predicted:\n\n" +
-	"1. Ingredient normalisation is 60% of the work and 0% of the demo.\n" +
-	"2. A small embedding model beat the bigger one because latency mattered.\n" +
-	"3. The admin editor was the highest-leverage UI surface in the whole app.\n"
+const resumeRankerLearning = "## Learning journey\n\n" +
+	"1. Embedding-only ranking is good enough for the top 20% — pay the LLM\n" +
+	"   bill only for that bucket.\n" +
+	"2. Async jobs + progress polling beats long-running HTTP every time.\n" +
+	"3. Google OAuth2 was the right call over rolling auth myself.\n"
+
+const ragDeepDiveOverview = "## Overview\n\n" +
+	"A production-grade conversational AI platform built to *teach* RAG, not\n" +
+	"just use it.\n\n" +
+	"- Hybrid retrieval: dense embeddings + BM25 + cross-encoder reranking.\n" +
+	"- GraphRAG and multi-hop retrieval across Qdrant and Neo4j.\n" +
+	"- Pipeline explainer UI that exposes every retrieval stage live.\n" +
+	"- Interactive Learning Hub with hands-on RAG component demos.\n"
+
+const ragDeepDiveWhyBuilt = "## Why I built this\n\n" +
+	"Most RAG tutorials stop at \"top-k from a vector DB.\" That's not how\n" +
+	"production systems retrieve. I wanted a single place to see hybrid\n" +
+	"search, reranking, and graph traversal side-by-side and understand\n" +
+	"why each layer earns its complexity.\n"
+
+const ragDeepDiveLearning = "## Learning journey\n\n" +
+	"1. Cross-encoder reranking changes everything — and it's cheap if you\n" +
+	"   only rerank the top 50.\n" +
+	"2. Graph + vector beats either alone on multi-hop questions.\n" +
+	"3. The explainer UI taught me more about my own pipeline than logs ever did.\n"
+
+const portfolioOverview = "## Overview\n\n" +
+	"The site you're reading. A tokens-first, neo-brutalist portfolio built\n" +
+	"to read well on a recruiter scan *and* survive a 10-minute deep read.\n\n" +
+	"- Frontend: Next.js 16 + TypeScript + Tailwind, ISR for project/blog pages.\n" +
+	"- Backend: Go + chi + sqlc + pgx + golang-migrate on Postgres.\n" +
+	"- Local dev: Docker (Postgres + Redis). Deploy cutover: Neon + Fly.io.\n"
+
+const portfolioWhyBuilt = "## Why I built this\n\n" +
+	"Most engineer portfolios are either templates or one-off React projects.\n" +
+	"I wanted something that doubles as a working showcase of the stack I\n" +
+	"actually ship in — Go backend, typed SQL, design tokens, admin CMS — and\n" +
+	"forces me to live with my own decisions.\n"
+
+const portfolioLearning = "## Learning journey\n\n" +
+	"1. sqlc + pgx beats GORM for portfolio-shaped CRUD. Compile-time SQL safety\n" +
+	"   over runtime convenience.\n" +
+	"2. Design tokens locked in Figma *before* writing components saved a refactor.\n" +
+	"3. Next.js `force-cache` is great for static prod but a footgun in dev —\n" +
+	"   use `revalidate` for anything that comes from your own DB.\n"

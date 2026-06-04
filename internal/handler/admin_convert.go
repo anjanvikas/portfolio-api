@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/service"
+	"github.com/anjanvikas/portfolio-api/internal/service"
 )
 
 // maxDocxBytes caps the multipart upload accepted by the docx converter. Real

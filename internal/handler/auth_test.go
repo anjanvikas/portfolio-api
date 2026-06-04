@@ -10,8 +10,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/auth"
-	mw "github.com/anjanvikas2001/portfolio-api/internal/middleware"
+	"github.com/anjanvikas/portfolio-api/internal/auth"
+	mw "github.com/anjanvikas/portfolio-api/internal/middleware"
 )
 
 const testPassword = "correct horse battery staple"

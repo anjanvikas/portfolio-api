@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/service"
-	"github.com/anjanvikas2001/portfolio-api/internal/store"
+	"github.com/anjanvikas/portfolio-api/internal/service"
+	"github.com/anjanvikas/portfolio-api/internal/store"
 )
 
 // Default and ceiling for the ?limit query param on the blog list. The blog

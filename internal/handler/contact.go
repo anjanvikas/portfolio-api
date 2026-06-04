@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/service"
+	"github.com/anjanvikas/portfolio-api/internal/service"
 )
 
 // contactMailer is the slice of service.Mailer the handler needs, declared as

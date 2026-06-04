@@ -13,7 +13,10 @@ SET name       = EXCLUDED.name,
 RETURNING *;
 
 -- name: GetProfile :one
-SELECT * FROM profile LIMIT 1;
+-- Singleton: if a stray duplicate ever exists (e.g. seed re-run with a changed
+-- email before constraints kick in), prefer the most recently updated row so
+-- API responses are deterministic.
+SELECT * FROM profile ORDER BY updated_at DESC LIMIT 1;
 
 -- name: UpdateProfile :one
 -- Admin edit of the singleton profile row (SCRUM-68). Updated by id, which the

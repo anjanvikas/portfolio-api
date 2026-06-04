@@ -8,10 +8,10 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/auth"
-	mw "github.com/anjanvikas2001/portfolio-api/internal/middleware"
-	"github.com/anjanvikas2001/portfolio-api/internal/service"
-	"github.com/anjanvikas2001/portfolio-api/internal/store"
+	"github.com/anjanvikas/portfolio-api/internal/auth"
+	mw "github.com/anjanvikas/portfolio-api/internal/middleware"
+	"github.com/anjanvikas/portfolio-api/internal/service"
+	"github.com/anjanvikas/portfolio-api/internal/store"
 )
 
 // Deps bundles everything the HTTP layer needs from the rest of the app.

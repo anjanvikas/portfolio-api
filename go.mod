@@ -1,4 +1,4 @@
-module github.com/anjanvikas2001/portfolio-api
+module github.com/anjanvikas/portfolio-api
 
 go 1.26.3
 

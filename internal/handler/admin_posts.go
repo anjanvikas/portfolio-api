@@ -14,9 +14,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/content"
-	"github.com/anjanvikas2001/portfolio-api/internal/service"
-	"github.com/anjanvikas2001/portfolio-api/internal/store"
+	"github.com/anjanvikas/portfolio-api/internal/content"
+	"github.com/anjanvikas/portfolio-api/internal/service"
+	"github.com/anjanvikas/portfolio-api/internal/store"
 )
 
 // ogUploader puts the generated PNG bytes into the object store from the server

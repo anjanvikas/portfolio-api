@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/auth"
+	"github.com/anjanvikas/portfolio-api/internal/auth"
 )
 
 type ctxKey string

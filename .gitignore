@@ -1,6 +1,9 @@
 # Binaries
 /bin/
 /api
+/seed
+/hashpw
+/gen-homepage-og
 *.exe
 *.exe~
 *.dll

@@ -15,8 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/content"
-	"github.com/anjanvikas2001/portfolio-api/internal/store"
+	"github.com/anjanvikas/portfolio-api/internal/content"
+	"github.com/anjanvikas/portfolio-api/internal/store"
 )
 
 // fakeAdminPostQ is a configurable fake implementing adminPostQueries and
@@ -242,7 +242,10 @@ func (g *fakeOGGen) RenderHomepage(string, string, string) ([]byte, error) {
 	return []byte("fake-home-png"), nil
 }
 
-type fakeOGR2 struct{ lastKey, lastCT string; bodyLen int }
+type fakeOGR2 struct {
+	lastKey, lastCT string
+	bodyLen         int
+}
 
 func (r *fakeOGR2) PutObject(_ context.Context, key, ct string, body []byte) (string, error) {
 	r.lastKey, r.lastCT, r.bodyLen = key, ct, len(body)

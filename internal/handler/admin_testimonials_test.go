@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/anjanvikas2001/portfolio-api/internal/store"
+	"github.com/anjanvikas/portfolio-api/internal/store"
 )
 
 type fakeAdminTestimonialQ struct {
@@ -50,7 +50,9 @@ func (f *fakeAdminTestimonialQ) SetTestimonialVisibility(_ context.Context, arg 
 func (f *fakeAdminTestimonialQ) DeleteTestimonial(context.Context, pgtype.UUID) (int64, error) {
 	return f.deleteN, nil
 }
-func (f *fakeAdminTestimonialQ) NextTestimonialSortOrder(context.Context) (int32, error) { return 5, nil }
+func (f *fakeAdminTestimonialQ) NextTestimonialSortOrder(context.Context) (int32, error) {
+	return 5, nil
+}
 
 func TestAdminTestimonialCreate_OK(t *testing.T) {
 	q := &fakeAdminTestimonialQ{}
