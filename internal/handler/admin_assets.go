@@ -28,7 +28,7 @@ type assetQueries interface {
 // assetPresigner is the subset of *service.R2Presigner the asset pipeline uses.
 // Kept as an interface so the handler can be tested without real R2 creds.
 type assetPresigner interface {
-	PresignPutObject(key string, expiry time.Duration) (string, error)
+	PresignPutObject(key, contentType string, expiry time.Duration) (string, error)
 	PublicURL(key string) string
 	KeyFromPublicURL(rawURL string) (string, bool)
 }
@@ -108,7 +108,10 @@ func (a *AdminAssets) Presign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := assetKey(req.Filename)
-	uploadURL, err := a.Presigner.PresignPutObject(key, presignTTL)
+	// Bind the declared Content-Type into the SigV4 signature so the browser's
+	// PUT (which sets the same header) matches. Without this, R2 returns 403
+	// SignatureDoesNotMatch the moment the client sends any Content-Type.
+	uploadURL, err := a.Presigner.PresignPutObject(key, strings.TrimSpace(req.ContentType), presignTTL)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "presign put", slog.String("error", err.Error()))
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})

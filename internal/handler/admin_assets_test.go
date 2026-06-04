@@ -45,8 +45,8 @@ func (f *fakeAssetQ) SoftDeleteAsset(_ context.Context, id pgtype.UUID) error {
 // stubPresigner is a deterministic assetPresigner for handler tests.
 type stubPresigner struct{ base string }
 
-func (s stubPresigner) PresignPutObject(key string, _ time.Duration) (string, error) {
-	return "https://upload.example/" + key + "?sig=abc", nil
+func (s stubPresigner) PresignPutObject(key, contentType string, _ time.Duration) (string, error) {
+	return "https://upload.example/" + key + "?ct=" + contentType + "&sig=abc", nil
 }
 func (s stubPresigner) PublicURL(key string) string { return s.base + "/" + key }
 func (s stubPresigner) KeyFromPublicURL(raw string) (string, bool) {

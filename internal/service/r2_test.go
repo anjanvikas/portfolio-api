@@ -90,7 +90,7 @@ func TestPresignGetObject_EscapesKey(t *testing.T) {
 
 func TestPresignPutObject_Structure(t *testing.T) {
 	p := fixedPresigner()
-	raw, err := p.PresignPutObject("assets/ab12cd34-photo.png", 15*time.Minute)
+	raw, err := p.PresignPutObject("assets/ab12cd34-photo.png", "image/png", 15*time.Minute)
 	if err != nil {
 		t.Fatalf("presign put: %v", err)
 	}
@@ -102,14 +102,40 @@ func TestPresignPutObject_Structure(t *testing.T) {
 	if q.Get("X-Amz-Expires") != "900" {
 		t.Fatalf("expires: got %q", q.Get("X-Amz-Expires"))
 	}
+	// content-type must be part of the signed headers — otherwise the browser's
+	// "Content-Type: image/png" PUT header isn't covered by the signature and
+	// R2 returns 403 SignatureDoesNotMatch.
+	if got := q.Get("X-Amz-SignedHeaders"); got != "content-type;host" {
+		t.Fatalf("signed headers: got %q want %q", got, "content-type;host")
+	}
 	if sig := q.Get("X-Amz-Signature"); len(sig) != 64 {
 		t.Fatalf("signature should be 64 hex chars, got %d", len(sig))
 	}
 }
 
+func TestPresignPutObject_EmptyContentTypeDefaults(t *testing.T) {
+	// Empty contentType must still produce a signature bound to a Content-Type,
+	// so frontend's fallback ("application/octet-stream") still matches.
+	raw, err := fixedPresigner().PresignPutObject("k", "", time.Minute)
+	if err != nil {
+		t.Fatalf("presign put: %v", err)
+	}
+	if got := mustQuery(t, raw).Get("X-Amz-SignedHeaders"); got != "content-type;host" {
+		t.Fatalf("signed headers: got %q", got)
+	}
+}
+
+func TestPresignPutObject_ContentTypeChangesSignature(t *testing.T) {
+	a, _ := fixedPresigner().PresignPutObject("k", "image/png", time.Minute)
+	b, _ := fixedPresigner().PresignPutObject("k", "image/jpeg", time.Minute)
+	if mustQuery(t, a).Get("X-Amz-Signature") == mustQuery(t, b).Get("X-Amz-Signature") {
+		t.Fatal("different Content-Type values must yield different signatures")
+	}
+}
+
 func TestPresignPutDiffersFromGet(t *testing.T) {
 	get, _ := fixedPresigner().PresignGetObject("k", time.Minute)
-	put, _ := fixedPresigner().PresignPutObject("k", time.Minute)
+	put, _ := fixedPresigner().PresignPutObject("k", "image/png", time.Minute)
 	if mustQuery(t, get).Get("X-Amz-Signature") == mustQuery(t, put).Get("X-Amz-Signature") {
 		t.Fatal("GET and PUT of the same key must sign differently (method is in the canonical request)")
 	}
