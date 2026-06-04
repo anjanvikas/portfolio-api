@@ -69,6 +69,15 @@ func main() {
 	// call time if the binary is missing, so wiring it unconditionally is safe.
 	converter := service.NewPandocConverter()
 
+	// OG image generator (SCRUM-69) renders 1200x630 cards from embedded fonts.
+	// Failing to parse the embedded TTFs is a build-time issue, not a runtime
+	// one, so we treat a startup error as fatal.
+	ogGen, err := service.NewGGGenerator()
+	if err != nil {
+		slog.Error("og generator init failed", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
 	router := handler.NewRouter(handler.Deps{
 		Pool:               pool,
 		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
@@ -79,6 +88,8 @@ func main() {
 		Presigner:          presigner,
 		ResumeKey:          cfg.R2ResumeKey,
 		DocxConverter:      converter,
+		OGGenerator:        ogGen,
+		SiteURL:            cfg.SiteURL,
 	})
 
 	srv := &http.Server{

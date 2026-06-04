@@ -26,6 +26,10 @@ type fakePostQ struct {
 	siblingsErr    error
 	siblingsCalled bool
 	lastSeriesSlug string
+
+	ogTarget    store.GetPublishedPostOGTargetRow
+	ogTargetErr error
+	setOGCalls  []store.SetBlogPostOGImageParams
 }
 
 func (f *fakePostQ) ListPublishedPostCards(ctx context.Context, rowLimit int32) ([]store.ListPublishedPostCardsRow, error) {
@@ -42,6 +46,17 @@ func (f *fakePostQ) ListPublishedPostsBySeriesSlug(ctx context.Context, slug str
 	f.siblingsCalled = true
 	f.lastSeriesSlug = slug
 	return f.siblings, f.siblingsErr
+}
+
+func (f *fakePostQ) GetPublishedPostOGTarget(_ context.Context, _ string) (store.GetPublishedPostOGTargetRow, error) {
+	return f.ogTarget, f.ogTargetErr
+}
+func (f *fakePostQ) GetProfile(context.Context) (store.Profile, error) {
+	return store.Profile{Name: "Test Author"}, nil
+}
+func (f *fakePostQ) SetBlogPostOGImage(_ context.Context, arg store.SetBlogPostOGImageParams) error {
+	f.setOGCalls = append(f.setOGCalls, arg)
+	return nil
 }
 
 func text(s string) pgtype.Text { return pgtype.Text{String: s, Valid: true} }
@@ -173,5 +188,76 @@ func TestPostDetail_NotFound(t *testing.T) {
 	h.Detail(rr, req)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status: got %d want 404", rr.Code)
+	}
+}
+
+func TestPostsOGImage_RedirectsToSavedURL(t *testing.T) {
+	id, _ := parseUUID(validUUID)
+	q := &fakePostQ{ogTarget: store.GetPublishedPostOGTargetRow{
+		ID: id, Slug: "hello", Title: "Hello", OgImageUrl: "https://example.test/og/posts/hello.png",
+	}}
+	h := NewPosts(q)
+	rr := httptest.NewRecorder()
+	req := withChiSlug(httptest.NewRequest(http.MethodGet, "/api/v1/posts/hello/og-image", nil), "hello")
+	h.OGImage(rr, req)
+
+	if rr.Code != http.StatusFound {
+		t.Fatalf("status: got %d want 302", rr.Code)
+	}
+	if got := rr.Header().Get("Location"); got != "https://example.test/og/posts/hello.png" {
+		t.Errorf("Location: got %q want saved URL", got)
+	}
+	if len(q.setOGCalls) != 0 {
+		t.Errorf("must not regenerate when URL already set")
+	}
+}
+
+func TestPostsOGImage_LazyRegenerateWhenURLEmpty(t *testing.T) {
+	id, _ := parseUUID(validUUID)
+	q := &fakePostQ{ogTarget: store.GetPublishedPostOGTargetRow{
+		ID: id, Slug: "hello", Title: "Hello world", OgImageUrl: "",
+	}}
+	og := &fakeOGGen{}
+	r2 := &fakeOGR2{}
+	h := NewPosts(q)
+	h.OG = og
+	h.R2 = r2
+	h.SiteURL = "https://anjanvikasreddy.dev"
+
+	rr := httptest.NewRecorder()
+	req := withChiSlug(httptest.NewRequest(http.MethodGet, "/api/v1/posts/hello/og-image", nil), "hello")
+	h.OGImage(rr, req)
+
+	if rr.Code != http.StatusFound {
+		t.Fatalf("status: got %d want 302; body=%s", rr.Code, rr.Body.String())
+	}
+	if r2.lastKey != "og/posts/hello.png" {
+		t.Errorf("R2 key wrong: %q", r2.lastKey)
+	}
+	if len(q.setOGCalls) != 1 || q.setOGCalls[0].OgImageUrl == "" {
+		t.Errorf("OG URL not persisted: %+v", q.setOGCalls)
+	}
+}
+
+func TestPostsOGImage_NotFound(t *testing.T) {
+	q := &fakePostQ{ogTargetErr: pgx.ErrNoRows}
+	h := NewPosts(q)
+	rr := httptest.NewRecorder()
+	req := withChiSlug(httptest.NewRequest(http.MethodGet, "/api/v1/posts/ghost/og-image", nil), "ghost")
+	h.OGImage(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status: got %d want 404", rr.Code)
+	}
+}
+
+func TestPostsOGImage_503WhenPipelineNotWired(t *testing.T) {
+	id, _ := parseUUID(validUUID)
+	q := &fakePostQ{ogTarget: store.GetPublishedPostOGTargetRow{ID: id, Slug: "hello", Title: "Hello", OgImageUrl: ""}}
+	h := NewPosts(q) // no OG/R2/SiteURL
+	rr := httptest.NewRecorder()
+	req := withChiSlug(httptest.NewRequest(http.MethodGet, "/api/v1/posts/hello/og-image", nil), "hello")
+	h.OGImage(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: got %d want 503", rr.Code)
 	}
 }

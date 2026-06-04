@@ -74,6 +74,11 @@ seed:
 hashpw:
 	@read -rsp "Passphrase: " pw && echo && printf %s "$$pw" | go run ./cmd/hashpw
 
+## og-homepage: render + upload the static homepage OG image to R2 (one-shot)
+.PHONY: og-homepage
+og-homepage:
+	go run ./cmd/gen-homepage-og
+
 ## lint: golangci-lint
 .PHONY: lint
 lint:

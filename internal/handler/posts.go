@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/anjanvikas2001/portfolio-api/internal/service"
 	"github.com/anjanvikas2001/portfolio-api/internal/store"
 )
 
@@ -28,12 +29,22 @@ type postQueries interface {
 	ListPublishedPostCards(ctx context.Context, rowLimit int32) ([]store.ListPublishedPostCardsRow, error)
 	GetPublishedPostBySlug(ctx context.Context, slug string) (store.GetPublishedPostBySlugRow, error)
 	ListPublishedPostsBySeriesSlug(ctx context.Context, slug string) ([]store.ListPublishedPostsBySeriesSlugRow, error)
+	GetPublishedPostOGTarget(ctx context.Context, slug string) (store.GetPublishedPostOGTargetRow, error)
+	GetProfile(ctx context.Context) (store.Profile, error)
+	SetBlogPostOGImage(ctx context.Context, arg store.SetBlogPostOGImageParams) error
 }
 
 // Posts groups the public read-only blog-post handlers behind GET /api/v1/posts
 // and GET /api/v1/posts/{slug}.
+//
+// OG, R2, and SiteURL are optional (SCRUM-69): when all three are wired the
+// /og-image endpoint will lazily regenerate when og_image_url is empty. With
+// any of them unset, that endpoint 404s on an unset image.
 type Posts struct {
-	Q postQueries
+	Q       postQueries
+	OG      service.OGImageGenerator
+	R2      ogUploader
+	SiteURL string
 }
 
 // NewPosts wires the handler against the live sqlc queries.
@@ -104,6 +115,7 @@ type postDetailDTO struct {
 	Excerpt         string     `json:"excerpt"`
 	Body            string     `json:"body"`
 	CoverURL        string     `json:"cover_url"`
+	OGImageURL      string     `json:"og_image_url"`
 	PublishedAt     string     `json:"published_at"`
 	ReadingTimeMins int32      `json:"reading_time_mins"`
 	Tags            []string   `json:"tags"`
@@ -137,6 +149,7 @@ func (p *Posts) Detail(w http.ResponseWriter, r *http.Request) {
 		Excerpt:         row.Excerpt,
 		Body:            row.Body,
 		CoverURL:        row.CoverKey,
+		OGImageURL:      row.OgImageUrl,
 		PublishedAt:     isoDate(row.PublishedAt),
 		ReadingTimeMins: row.ReadingTimeMins,
 		Tags:            row.Tags,
@@ -182,6 +195,63 @@ func cardSeriesRef(name, slug pgtype.Text, order pgtype.Int4) *seriesRef {
 
 func navFrom(p store.ListPublishedPostsBySeriesSlugRow) *seriesNavDTO {
 	return &seriesNavDTO{Title: p.Title, Slug: p.Slug, SeriesOrder: p.SeriesOrder.Int32}
+}
+
+// OGImage handles GET /api/v1/posts/{slug}/og-image. 302-redirects to the saved
+// og_image_url on the post (eager-generated at publish time). When the URL is
+// empty — either OG generation failed at publish or the column was cleared to
+// force a regenerate — it lazily renders, uploads, and persists the image,
+// then redirects. Published posts only; 404 otherwise. 503 when the OG/R2
+// pipeline isn't configured and no image exists yet.
+func (p *Posts) OGImage(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	row, err := p.Q.GetPublishedPostOGTarget(r.Context(), slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "post not found"})
+			return
+		}
+		slog.ErrorContext(r.Context(), "og: load post", slog.String("error", err.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	if row.OgImageUrl != "" {
+		http.Redirect(w, r, row.OgImageUrl, http.StatusFound)
+		return
+	}
+
+	// Lazy regenerate path. Requires the full pipeline; otherwise the post just
+	// has no OG image yet.
+	if p.OG == nil || p.R2 == nil || p.SiteURL == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "og image not yet generated"})
+		return
+	}
+
+	prof, err := p.Q.GetProfile(r.Context())
+	if err != nil {
+		slog.ErrorContext(r.Context(), "og: load profile", slog.String("error", err.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	png, err := p.OG.RenderPost(row.Title, prof.Name, p.SiteURL)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "og: render", slog.String("error", err.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "og render failed"})
+		return
+	}
+	key := "og/posts/" + row.Slug + ".png"
+	publicURL, err := p.R2.PutObject(r.Context(), key, "image/png", png)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "og: upload", slog.String("error", err.Error()))
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "og upload failed"})
+		return
+	}
+	if err := p.Q.SetBlogPostOGImage(r.Context(), store.SetBlogPostOGImageParams{ID: row.ID, OgImageUrl: publicURL}); err != nil {
+		// Persist failed but the object is up — still serve the URL once.
+		slog.ErrorContext(r.Context(), "og: persist url", slog.String("error", err.Error()))
+	}
+	http.Redirect(w, r, publicURL, http.StatusFound)
 }
 
 // parsePostLimit clamps ?limit into [1, maxPostLimit], defaulting when absent

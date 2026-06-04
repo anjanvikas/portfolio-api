@@ -34,6 +34,7 @@ type BlogPost struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	ReadingTimeMins int32              `json:"reading_time_mins"`
 	CoverUrl        string             `json:"cover_url"`
+	OgImageUrl      string             `json:"og_image_url"`
 }
 
 type BlogPostTag struct {

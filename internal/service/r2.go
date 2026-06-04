@@ -1,10 +1,13 @@
 package service
 
 import (
+	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -84,21 +87,62 @@ func (p *R2Presigner) KeyFromPublicURL(rawURL string) (string, bool) {
 // PresignGetObject returns a URL that grants temporary, unauthenticated GET
 // access to the object at key, valid for the expiry window.
 func (p *R2Presigner) PresignGetObject(key string, expiry time.Duration) (string, error) {
-	return p.presign(http.MethodGet, key, expiry)
+	return p.presign(http.MethodGet, key, "", expiry)
 }
 
 // PresignPutObject returns a URL that grants temporary, unauthenticated PUT
 // access to the object at key, valid for the expiry window. The browser uploads
-// the file bytes directly to this URL (the Go server never carries them). Only
-// the host header is signed, so the client may send any Content-Type.
-func (p *R2Presigner) PresignPutObject(key string, expiry time.Duration) (string, error) {
-	return p.presign(http.MethodPut, key, expiry)
+// the file bytes directly to this URL (the Go server never carries them).
+//
+// contentType is bound into the SigV4 signature: the browser MUST send the same
+// Content-Type header on the PUT, otherwise R2 rejects with 403 SignatureDoesNotMatch.
+// Pass "" to fall back to "application/octet-stream", which matches the frontend's
+// default for files whose File.type is unknown.
+func (p *R2Presigner) PresignPutObject(key, contentType string, expiry time.Duration) (string, error) {
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return p.presign(http.MethodPut, key, contentType, expiry)
+}
+
+// PutObject uploads body bytes to the object at key from the Go server itself
+// (not via the browser → presigned PUT pipeline). Used for OG image generation,
+// where the bytes live on the server and would have nothing to do with a
+// browser. Reuses the same SigV4 signer to keep one signing implementation; the
+// expiry is short (60s) because the URL is used immediately. Returns the
+// stable public URL of the uploaded object on success.
+func (p *R2Presigner) PutObject(ctx context.Context, key, contentType string, body []byte) (string, error) {
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	signedURL, err := p.PresignPutObject(key, contentType, time.Minute)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, signedURL, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("build put request: %w", err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.ContentLength = int64(len(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("r2 put: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return "", fmt.Errorf("r2 put %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+	}
+	return p.PublicURL(key), nil
 }
 
 // presign builds a SigV4 query-string-signed URL for the given HTTP method and
 // object key. Shared by the GET (download) and PUT (upload) flows: the signing
 // algorithm is identical, only the HTTP verb in the canonical request changes.
-func (p *R2Presigner) presign(method, key string, expiry time.Duration) (string, error) {
+// contentType is non-empty only for PUT; including it in the signed headers lets
+// R2 enforce the upload's declared MIME type.
+func (p *R2Presigner) presign(method, key, contentType string, expiry time.Duration) (string, error) {
 	u, err := url.Parse(p.endpoint)
 	if err != nil {
 		return "", fmt.Errorf("parse R2 endpoint: %w", err)
@@ -114,15 +158,22 @@ func (p *R2Presigner) presign(method, key string, expiry time.Duration) (string,
 	dateStamp := now.Format("20060102")
 	scope := strings.Join([]string{dateStamp, p.region, presignService, "aws4_request"}, "/")
 
+	// Canonical headers must be sorted alphabetically by lowercase name.
+	// "content-type" sorts before "host", so when present it comes first.
+	canonicalHeaders := "host:" + host + "\n"
+	signedHeaders := "host"
+	if contentType != "" {
+		canonicalHeaders = "content-type:" + contentType + "\n" + canonicalHeaders
+		signedHeaders = "content-type;host"
+	}
+
 	q := url.Values{}
 	q.Set("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
 	q.Set("X-Amz-Credential", p.accessKey+"/"+scope)
 	q.Set("X-Amz-Date", amzDate)
 	q.Set("X-Amz-Expires", strconv.Itoa(int(expiry.Seconds())))
-	q.Set("X-Amz-SignedHeaders", "host")
+	q.Set("X-Amz-SignedHeaders", signedHeaders)
 
-	canonicalHeaders := "host:" + host + "\n"
-	signedHeaders := "host"
 	payloadHash := "UNSIGNED-PAYLOAD"
 
 	canonicalRequest := strings.Join([]string{

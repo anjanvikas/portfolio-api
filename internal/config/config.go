@@ -24,6 +24,9 @@ type Config struct {
 	ContactToEmail     string
 	CORSAllowedOrigins []string
 	CookieSecure       bool
+	// SiteURL is the public origin of the marketing site, baked into OG card
+	// graphics and the sitemap. Optional in dev (defaults to localhost).
+	SiteURL string
 }
 
 func Load() (*Config, error) {
@@ -43,6 +46,7 @@ func Load() (*Config, error) {
 		ContactToEmail:     os.Getenv("CONTACT_TO_EMAIL"),
 		CORSAllowedOrigins: parseCSV(getenvDefault("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
 		CookieSecure:       parseBool(getenvDefault("COOKIE_SECURE", "false")),
+		SiteURL:            strings.TrimRight(getenvDefault("SITE_URL", "http://localhost:3000"), "/"),
 	}
 
 	required := map[string]string{

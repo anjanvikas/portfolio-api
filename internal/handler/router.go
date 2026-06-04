@@ -28,6 +28,11 @@ type Deps struct {
 	Presigner     *service.R2Presigner
 	ResumeKey     string
 	DocxConverter service.DocxConverter
+	// OGGenerator + SiteURL together enable per-post OG image generation
+	// (SCRUM-69). Both are optional; missing either disables the eager publish
+	// step and makes the /og-image endpoint a 503.
+	OGGenerator service.OGImageGenerator
+	SiteURL     string
 }
 
 // NewRouter builds the top-level Chi router with the global middleware stack
@@ -58,14 +63,28 @@ func NewRouter(d Deps) http.Handler {
 		profileH.ResumeKey = d.ResumeKey
 		adminAssetsH.Presigner = d.Presigner
 	}
+	// Wire the OG image pipeline (SCRUM-69) only when both the generator and
+	// the R2 presigner are available. Either missing leaves the per-post OG
+	// fields nil, which the handlers treat as "feature disabled".
+	ogReady := d.OGGenerator != nil && d.Presigner != nil && d.SiteURL != ""
 	contactH := NewContact(d.Mailer)
 	projectsH := NewProjects(queries)
 	postsH := NewPosts(queries)
+	if ogReady {
+		postsH.OG = d.OGGenerator
+		postsH.R2 = d.Presigner
+		postsH.SiteURL = d.SiteURL
+	}
 	seriesH := NewSeries(queries)
 	experienceH := NewExperience(queries)
 	testimonialsH := NewTestimonials(queries)
 	statsH := NewStats(queries)
 	adminPostsH := NewAdminPosts(queries)
+	if ogReady {
+		adminPostsH.OG = d.OGGenerator
+		adminPostsH.R2 = d.Presigner
+		adminPostsH.SiteURL = d.SiteURL
+	}
 	adminProjectsH := NewAdminProjects(queries)
 	adminExperienceH := NewAdminExperience(queries)
 	adminTestimonialsH := NewAdminTestimonials(queries)
@@ -88,6 +107,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Get("/projects/{slug}", projectsH.Detail)
 		r.Get("/posts", postsH.List)
 		r.Get("/posts/{slug}", postsH.Detail)
+		r.Get("/posts/{slug}/og-image", postsH.OGImage)
 		r.Get("/series", seriesH.List)
 		r.Get("/series/{slug}", seriesH.Detail)
 		r.Get("/experience", experienceH.List)

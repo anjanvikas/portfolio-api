@@ -64,6 +64,7 @@ SELECT
     p.published_at,
     p.series_order,
     p.cover_url AS cover_key,
+    p.og_image_url,
     bs.name   AS series_name,
     bs.slug   AS series_slug,
     p.reading_time_mins,
@@ -173,3 +174,21 @@ DELETE FROM blog_post WHERE id = sqlc.arg(id);
 -- Drops all tag links for a post so the handler can re-link the submitted set
 -- (tags are replaced wholesale on each save).
 DELETE FROM blog_post_tags WHERE blog_post_id = sqlc.arg(blog_post_id);
+
+-- name: SetBlogPostOGImage :exec
+-- SCRUM-69: persist the generated OG image URL on the post. Called after the
+-- publish handler renders + uploads the 1200x630 card to R2. Idempotent —
+-- regenerate by clearing the column and re-publishing.
+UPDATE blog_post
+SET og_image_url = sqlc.arg(og_image_url),
+    updated_at   = now()
+WHERE id = sqlc.arg(id);
+
+-- name: GetPublishedPostOGTarget :one
+-- SCRUM-69: powers GET /api/v1/posts/{slug}/og-image — returns the post id,
+-- title, and current og_image_url for either a 302 redirect (already generated)
+-- or a lazy-fallback regeneration. Published-only.
+SELECT id, slug, title, og_image_url
+FROM blog_post
+WHERE slug = sqlc.arg(slug)
+  AND published_at IS NOT NULL;

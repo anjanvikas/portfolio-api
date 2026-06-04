@@ -29,7 +29,7 @@ VALUES (
     $5, $6, $7,
     $8, $9
 )
-RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url
+RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url, og_image_url
 `
 
 type CreateBlogPostParams struct {
@@ -73,6 +73,7 @@ func (q *Queries) CreateBlogPost(ctx context.Context, arg CreateBlogPostParams) 
 		&i.UpdatedAt,
 		&i.ReadingTimeMins,
 		&i.CoverUrl,
+		&i.OgImageUrl,
 	)
 	return i, err
 }
@@ -165,6 +166,7 @@ SELECT
     p.published_at,
     p.series_order,
     p.cover_url AS cover_key,
+    p.og_image_url,
     bs.name   AS series_name,
     bs.slug   AS series_slug,
     p.reading_time_mins,
@@ -189,6 +191,7 @@ type GetPublishedPostBySlugRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	SeriesOrder     pgtype.Int4        `json:"series_order"`
 	CoverKey        string             `json:"cover_key"`
+	OgImageUrl      string             `json:"og_image_url"`
 	SeriesName      pgtype.Text        `json:"series_name"`
 	SeriesSlug      pgtype.Text        `json:"series_slug"`
 	ReadingTimeMins int32              `json:"reading_time_mins"`
@@ -209,10 +212,40 @@ func (q *Queries) GetPublishedPostBySlug(ctx context.Context, slug string) (GetP
 		&i.PublishedAt,
 		&i.SeriesOrder,
 		&i.CoverKey,
+		&i.OgImageUrl,
 		&i.SeriesName,
 		&i.SeriesSlug,
 		&i.ReadingTimeMins,
 		&i.Tags,
+	)
+	return i, err
+}
+
+const getPublishedPostOGTarget = `-- name: GetPublishedPostOGTarget :one
+SELECT id, slug, title, og_image_url
+FROM blog_post
+WHERE slug = $1
+  AND published_at IS NOT NULL
+`
+
+type GetPublishedPostOGTargetRow struct {
+	ID         pgtype.UUID `json:"id"`
+	Slug       string      `json:"slug"`
+	Title      string      `json:"title"`
+	OgImageUrl string      `json:"og_image_url"`
+}
+
+// SCRUM-69: powers GET /api/v1/posts/{slug}/og-image — returns the post id,
+// title, and current og_image_url for either a 302 redirect (already generated)
+// or a lazy-fallback regeneration. Published-only.
+func (q *Queries) GetPublishedPostOGTarget(ctx context.Context, slug string) (GetPublishedPostOGTargetRow, error) {
+	row := q.db.QueryRow(ctx, getPublishedPostOGTarget, slug)
+	var i GetPublishedPostOGTargetRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.OgImageUrl,
 	)
 	return i, err
 }
@@ -294,7 +327,7 @@ func (q *Queries) ListAdminPosts(ctx context.Context) ([]ListAdminPostsRow, erro
 }
 
 const listBlogPosts = `-- name: ListBlogPosts :many
-SELECT id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url FROM blog_post
+SELECT id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url, og_image_url FROM blog_post
 WHERE published_at IS NOT NULL
 ORDER BY published_at DESC
 `
@@ -322,6 +355,7 @@ func (q *Queries) ListBlogPosts(ctx context.Context) ([]BlogPost, error) {
 			&i.UpdatedAt,
 			&i.ReadingTimeMins,
 			&i.CoverUrl,
+			&i.OgImageUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -410,7 +444,7 @@ UPDATE blog_post
 SET published_at = COALESCE(published_at, now()),
     updated_at   = now()
 WHERE id = $1
-RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url
+RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url, og_image_url
 `
 
 // Promotes a draft to published. COALESCE preserves the original publish date
@@ -432,8 +466,29 @@ func (q *Queries) PublishBlogPost(ctx context.Context, id pgtype.UUID) (BlogPost
 		&i.UpdatedAt,
 		&i.ReadingTimeMins,
 		&i.CoverUrl,
+		&i.OgImageUrl,
 	)
 	return i, err
+}
+
+const setBlogPostOGImage = `-- name: SetBlogPostOGImage :exec
+UPDATE blog_post
+SET og_image_url = $1,
+    updated_at   = now()
+WHERE id = $2
+`
+
+type SetBlogPostOGImageParams struct {
+	OgImageUrl string      `json:"og_image_url"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+// SCRUM-69: persist the generated OG image URL on the post. Called after the
+// publish handler renders + uploads the 1200x630 card to R2. Idempotent —
+// regenerate by clearing the column and re-publishing.
+func (q *Queries) SetBlogPostOGImage(ctx context.Context, arg SetBlogPostOGImageParams) error {
+	_, err := q.db.Exec(ctx, setBlogPostOGImage, arg.OgImageUrl, arg.ID)
+	return err
 }
 
 const updateBlogPost = `-- name: UpdateBlogPost :one
@@ -448,7 +503,7 @@ SET slug              = $1,
     reading_time_mins = $8,
     updated_at        = now()
 WHERE id = $9
-RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url
+RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url, og_image_url
 `
 
 type UpdateBlogPostParams struct {
@@ -493,6 +548,7 @@ func (q *Queries) UpdateBlogPost(ctx context.Context, arg UpdateBlogPostParams) 
 		&i.UpdatedAt,
 		&i.ReadingTimeMins,
 		&i.CoverUrl,
+		&i.OgImageUrl,
 	)
 	return i, err
 }
@@ -510,7 +566,7 @@ SET title             = EXCLUDED.title,
     published_at      = EXCLUDED.published_at,
     reading_time_mins = EXCLUDED.reading_time_mins,
     updated_at        = now()
-RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url
+RETURNING id, slug, title, excerpt, body, cover_asset_id, series_id, series_order, published_at, created_at, updated_at, reading_time_mins, cover_url, og_image_url
 `
 
 type UpsertBlogPostParams struct {
@@ -554,6 +610,7 @@ func (q *Queries) UpsertBlogPost(ctx context.Context, arg UpsertBlogPostParams) 
 		&i.UpdatedAt,
 		&i.ReadingTimeMins,
 		&i.CoverUrl,
+		&i.OgImageUrl,
 	)
 	return i, err
 }

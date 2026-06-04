@@ -3,10 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -36,6 +38,7 @@ type fakeAdminPostQ struct {
 	clearedTags  []pgtype.UUID
 	linkedTags   []string
 	upsertedTags []string
+	setOGCalls   []store.SetBlogPostOGImageParams
 }
 
 func (f *fakeAdminPostQ) ListAdminPosts(context.Context) ([]store.ListAdminPostsRow, error) {
@@ -62,7 +65,8 @@ func (f *fakeAdminPostQ) PublishBlogPost(_ context.Context, id pgtype.UUID) (sto
 	if f.publishErr != nil {
 		return store.BlogPost{}, f.publishErr
 	}
-	return store.BlogPost{ID: id}, nil
+	// Mirror the loaded row so OG generation sees a real title + slug.
+	return store.BlogPost{ID: id, Slug: f.getRow.Slug, Title: f.getRow.Title}, nil
 }
 func (f *fakeAdminPostQ) DeleteBlogPost(context.Context, pgtype.UUID) (int64, error) {
 	return f.deleteRows, f.deleteErr
@@ -83,6 +87,13 @@ func (f *fakeAdminPostQ) ListAllSeries(context.Context) ([]store.ListAllSeriesRo
 	return nil, nil
 }
 func (f *fakeAdminPostQ) ListTags(context.Context) ([]store.Tag, error) { return nil, nil }
+func (f *fakeAdminPostQ) GetProfile(context.Context) (store.Profile, error) {
+	return store.Profile{Name: "Test Author"}, nil
+}
+func (f *fakeAdminPostQ) SetBlogPostOGImage(_ context.Context, arg store.SetBlogPostOGImageParams) error {
+	f.setOGCalls = append(f.setOGCalls, arg)
+	return nil
+}
 
 // withID injects a chi route param so handlers reading {id} work in tests.
 func withID(r *http.Request, id string) *http.Request {
@@ -218,6 +229,89 @@ func TestAdminPublish_UnknownID(t *testing.T) {
 		t.Fatalf("status: got %d want 404", rr.Code)
 	}
 }
+
+// fakeOGGen + fakeOGUploader stand in for the SCRUM-69 OG pipeline so the
+// publish test can verify the eager-generation step writes through to the DB.
+type fakeOGGen struct{ lastTitle, lastAuthor, lastSite string }
+
+func (g *fakeOGGen) RenderPost(title, author, site string) ([]byte, error) {
+	g.lastTitle, g.lastAuthor, g.lastSite = title, author, site
+	return []byte("fake-png-bytes"), nil
+}
+func (g *fakeOGGen) RenderHomepage(string, string, string) ([]byte, error) {
+	return []byte("fake-home-png"), nil
+}
+
+type fakeOGR2 struct{ lastKey, lastCT string; bodyLen int }
+
+func (r *fakeOGR2) PutObject(_ context.Context, key, ct string, body []byte) (string, error) {
+	r.lastKey, r.lastCT, r.bodyLen = key, ct, len(body)
+	return "https://example.test/" + key, nil
+}
+
+func TestAdminPublish_GeneratesAndSavesOGImage(t *testing.T) {
+	id, _ := parseUUID(validUUID)
+	q := &fakeAdminPostQ{
+		getRow: store.GetAdminPostRow{ID: id, Title: "Hello world", Slug: "hello", PublishedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true}},
+	}
+	og := &fakeOGGen{}
+	r2 := &fakeOGR2{}
+	h := NewAdminPosts(q)
+	h.OG = og
+	h.R2 = r2
+	h.SiteURL = "https://anjanvikasreddy.dev"
+
+	rr := httptest.NewRecorder()
+	req := withID(httptest.NewRequest(http.MethodPost, "/api/v1/admin/posts/"+validUUID+"/publish", nil), validUUID)
+	h.Publish(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	if og.lastTitle != "Hello world" || og.lastAuthor != "Test Author" || og.lastSite != "https://anjanvikasreddy.dev" {
+		t.Errorf("OG render args wrong: %+v", og)
+	}
+	if r2.lastKey != "og/posts/hello.png" || r2.lastCT != "image/png" || r2.bodyLen == 0 {
+		t.Errorf("R2 put wrong: %+v", r2)
+	}
+	if len(q.setOGCalls) != 1 || q.setOGCalls[0].OgImageUrl != "https://example.test/og/posts/hello.png" {
+		t.Errorf("OG URL not persisted: %+v", q.setOGCalls)
+	}
+}
+
+func TestAdminPublish_OGFailureDoesNotFailPublish(t *testing.T) {
+	id, _ := parseUUID(validUUID)
+	q := &fakeAdminPostQ{
+		getRow: store.GetAdminPostRow{ID: id, Title: "Hello", Slug: "hello", PublishedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true}},
+	}
+	og := &failingOGGen{}
+	h := NewAdminPosts(q)
+	h.OG = og
+	h.R2 = &fakeOGR2{}
+	h.SiteURL = "https://anjanvikasreddy.dev"
+
+	rr := httptest.NewRecorder()
+	req := withID(httptest.NewRequest(http.MethodPost, "/api/v1/admin/posts/"+validUUID+"/publish", nil), validUUID)
+	h.Publish(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("publish must succeed even when OG render fails; got %d", rr.Code)
+	}
+	if len(q.setOGCalls) != 0 {
+		t.Errorf("must not persist OG URL on render failure: %+v", q.setOGCalls)
+	}
+}
+
+type failingOGGen struct{}
+
+func (failingOGGen) RenderPost(string, string, string) ([]byte, error) {
+	return nil, errFake
+}
+func (failingOGGen) RenderHomepage(string, string, string) ([]byte, error) {
+	return nil, errFake
+}
+
+var errFake = errors.New("boom")
 
 func TestAdminList_StatusMapping(t *testing.T) {
 	id, _ := parseUUID(validUUID)

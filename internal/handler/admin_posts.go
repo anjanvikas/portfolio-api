@@ -15,8 +15,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/anjanvikas2001/portfolio-api/internal/content"
+	"github.com/anjanvikas2001/portfolio-api/internal/service"
 	"github.com/anjanvikas2001/portfolio-api/internal/store"
 )
+
+// ogUploader puts the generated PNG bytes into the object store from the server
+// itself. R2Presigner satisfies it; tests can fake it. Kept narrow so the OG
+// pipeline doesn't depend on the whole presigner API surface.
+type ogUploader interface {
+	PutObject(ctx context.Context, key, contentType string, body []byte) (string, error)
+}
 
 // adminPostQueries is the slice of store.Queries the admin blog CRUD needs,
 // declared as an interface so the handler is unit-testable with a fake (the
@@ -36,12 +44,23 @@ type adminPostQueries interface {
 	UpsertTag(ctx context.Context, arg store.UpsertTagParams) (store.Tag, error)
 	ListAllSeries(ctx context.Context) ([]store.ListAllSeriesRow, error)
 	ListTags(ctx context.Context) ([]store.Tag, error)
+	GetProfile(ctx context.Context) (store.Profile, error)
+	SetBlogPostOGImage(ctx context.Context, arg store.SetBlogPostOGImageParams) error
 }
 
 // AdminPosts groups the protected blog-post CRUD handlers mounted under
 // /api/v1/admin/posts (SCRUM-66). Every route here sits behind RequireAdmin.
+//
+// OG, R2, and SiteURL are optional (SCRUM-69): when all three are set, the
+// Publish handler eagerly renders a 1200x630 OG card and uploads it to R2 at
+// `og/posts/<slug>.png`. A generation/upload failure is logged but does NOT
+// fail the publish — the post still goes live, just without a saved OG image
+// (the /og-image GET endpoint will regenerate lazily on first hit).
 type AdminPosts struct {
-	Q adminPostQueries
+	Q       adminPostQueries
+	OG      service.OGImageGenerator
+	R2      ogUploader
+	SiteURL string
 }
 
 // NewAdminPosts wires the handler against the live sqlc queries.
@@ -242,13 +261,16 @@ func (a *AdminPosts) Update(w http.ResponseWriter, r *http.Request) {
 // ---- publish -------------------------------------------------------------
 
 // Publish handles POST /api/v1/admin/posts/{id}/publish. Sets published_at to
-// now() the first time; re-publishing preserves the original date.
+// now() the first time; re-publishing preserves the original date. After a
+// successful publish, eagerly generates + uploads the OG image (best-effort —
+// see GeneratePostOG).
 func (a *AdminPosts) Publish(w http.ResponseWriter, r *http.Request) {
 	id, ok := parsePathUUID(w, r)
 	if !ok {
 		return
 	}
-	if _, err := a.Q.PublishBlogPost(r.Context(), id); err != nil {
+	post, err := a.Q.PublishBlogPost(r.Context(), id)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "post not found"})
 			return
@@ -257,7 +279,39 @@ func (a *AdminPosts) Publish(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	a.generatePostOG(r.Context(), post.ID, post.Slug, post.Title)
 	a.respondWithPost(w, r, id, http.StatusOK)
+}
+
+// generatePostOG renders the OG card, uploads it to R2 at og/posts/<slug>.png,
+// and persists the public URL on the post. Best-effort: any failure is logged
+// and swallowed so a publish never fails because of OG generation. No-op when
+// the OG pipeline isn't fully wired (R2 not configured, generator nil, etc).
+func (a *AdminPosts) generatePostOG(ctx context.Context, id pgtype.UUID, slug, title string) {
+	if a.OG == nil || a.R2 == nil || a.SiteURL == "" {
+		return
+	}
+	prof, err := a.Q.GetProfile(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "og: load profile", slog.String("error", err.Error()))
+		return
+	}
+	png, err := a.OG.RenderPost(title, prof.Name, a.SiteURL)
+	if err != nil {
+		slog.ErrorContext(ctx, "og: render", slog.String("error", err.Error()), slog.String("slug", slug))
+		return
+	}
+	key := "og/posts/" + slug + ".png"
+	publicURL, err := a.R2.PutObject(ctx, key, "image/png", png)
+	if err != nil {
+		slog.ErrorContext(ctx, "og: upload", slog.String("error", err.Error()), slog.String("slug", slug))
+		return
+	}
+	if err := a.Q.SetBlogPostOGImage(ctx, store.SetBlogPostOGImageParams{ID: id, OgImageUrl: publicURL}); err != nil {
+		slog.ErrorContext(ctx, "og: persist url", slog.String("error", err.Error()), slog.String("slug", slug))
+		return
+	}
+	slog.InfoContext(ctx, "og image generated", slog.String("slug", slug), slog.String("url", publicURL))
 }
 
 // ---- delete --------------------------------------------------------------
