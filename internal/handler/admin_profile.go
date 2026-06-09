@@ -21,8 +21,13 @@ type adminProfileQueries interface {
 
 // AdminProfile serves the protected profile editor (GET + PUT) mounted under
 // /api/v1/admin/profile (SCRUM-68). The profile is a singleton row.
+//
+// Normalizer rewrites legacy private R2 URLs onto the configured public base
+// before they reach the admin form (SCRUM-82), so the live avatar preview
+// matches the public Hero / About render, and re-saving self-heals the row.
 type AdminProfile struct {
-	Q adminProfileQueries
+	Q          adminProfileQueries
+	Normalizer urlNormalizer
 }
 
 // NewAdminProfile wires the handler against the live sqlc queries.
@@ -63,7 +68,7 @@ func (a *AdminProfile) Get(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	writeJSON(w, http.StatusOK, adminProfileFromRow(row))
+	writeJSON(w, http.StatusOK, a.dto(row))
 }
 
 // Update handles PUT /api/v1/admin/profile. Loads the singleton to resolve its
@@ -121,18 +126,21 @@ func (a *AdminProfile) Update(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	writeJSON(w, http.StatusOK, adminProfileFromRow(row))
+	writeJSON(w, http.StatusOK, a.dto(row))
 }
 
-func adminProfileFromRow(row store.Profile) adminProfileDTO {
+// dto turns the singleton row into the admin DTO with legacy R2 URLs rewritten
+// onto the public base. This keeps the admin form, the live preview, and the
+// public site all aligned on the same URL.
+func (a *AdminProfile) dto(row store.Profile) adminProfileDTO {
 	return adminProfileDTO{
 		ID:        uuidString(row.ID),
 		Name:      row.Name,
 		Headline:  row.Headline,
-		Bio:       row.Bio,
+		Bio:       nzBody(a.Normalizer, row.Bio),
 		Location:  row.Location,
 		Email:     row.Email,
-		ResumeURL: row.ResumeUrl.String,
-		AvatarURL: row.AvatarUrl.String,
+		ResumeURL: nz(a.Normalizer, row.ResumeUrl.String),
+		AvatarURL: nz(a.Normalizer, row.AvatarUrl.String),
 	}
 }

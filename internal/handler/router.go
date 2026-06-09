@@ -75,6 +75,10 @@ func NewRouter(d Deps) http.Handler {
 		projectsH.Normalizer = d.Presigner
 		postsH.Normalizer = d.Presigner
 	}
+	adminProfileH := NewAdminProfile(queries)
+	if d.Presigner != nil {
+		adminProfileH.Normalizer = d.Presigner
+	}
 	if ogReady {
 		postsH.OG = d.OGGenerator
 		postsH.R2 = d.Presigner
@@ -93,7 +97,6 @@ func NewRouter(d Deps) http.Handler {
 	adminProjectsH := NewAdminProjects(queries)
 	adminExperienceH := NewAdminExperience(queries)
 	adminTestimonialsH := NewAdminTestimonials(queries)
-	adminProfileH := NewAdminProfile(queries)
 	adminConvertH := NewAdminConvert(d.DocxConverter)
 	authH := NewAuth(AuthDeps{
 		JWTSecret:         d.JWTSecret,
