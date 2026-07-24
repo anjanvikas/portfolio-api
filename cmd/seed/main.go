@@ -52,7 +52,7 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 		Bio:       "I build LLM-powered backend systems — distributed pipelines, GenAI workflows, and IAM platforms at production scale. Currently shipping a 0→1 LLM Risk & Compliance platform at Wells Fargo. Go, Python, Kafka, and a lot of FastAPI.",
 		Location:  "Bengaluru, KA, India",
 		Email:     "anjanvikas2001@gmail.com",
-		ResumeUrl: text("https://example.com/resume.pdf"),
+		ResumeUrl: text("https://pub-8309b9ffc8124004831c19e903d8bc4a.r2.dev/resume.pdf"),
 		AvatarUrl: text("https://example.com/avatar.jpg"),
 	}); err != nil {
 		return fmt.Errorf("profile: %w", err)
