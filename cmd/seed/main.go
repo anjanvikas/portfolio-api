@@ -1,5 +1,10 @@
 // Seed program for local development.
 //
+// Mirrors the actual content currently in the local Docker Postgres instance
+// (profile, experience, tags, the published blog post, projects, testimonials,
+// and the media-library asset rows) so a fresh `make seed` reproduces the real
+// site instead of placeholder copy.
+//
 // Idempotent: every insert is an ON CONFLICT DO UPDATE, so re-running this
 // program never creates duplicates. Run with `make seed` (which loads .env)
 // or `DATABASE_URL=... go run ./cmd/seed`.
@@ -7,6 +12,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"log"
 	"os"
@@ -48,12 +54,12 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	// ---- Profile ----------------------------------------------------------
 	if _, err := q.UpsertProfile(ctx, store.UpsertProfileParams{
 		Name:      "Anjan Vikas Reddy",
-		Headline:  "Senior Software Engineer @ Wells Fargo",
-		Bio:       "I build LLM-powered backend systems — distributed pipelines, GenAI workflows, and IAM platforms at production scale. Currently shipping a 0→1 LLM Risk & Compliance platform at Wells Fargo. Go, Python, Kafka, and a lot of FastAPI.",
+		Headline:  "Senior Software Engineer",
+		Bio:       "I build production-scale LLM systems end to end — distributed backend pipelines, agent orchestration, the full stack. Go, Python, JavaScript, Kafka, Redis, PostgreSQL/MongoDB, vector databases. I care about CI/CD and systems that actually hold up at scale.",
 		Location:  "Bengaluru, KA, India",
 		Email:     "anjanvikas2001@gmail.com",
 		ResumeUrl: text("https://pub-8309b9ffc8124004831c19e903d8bc4a.r2.dev/resume.pdf"),
-		AvatarUrl: text("https://example.com/avatar.jpg"),
+		AvatarUrl: text("https://pub-8309b9ffc8124004831c19e903d8bc4a.r2.dev/assets/c6744887-Professional_headshot_of_the_young_202605241149.jpeg"),
 	}); err != nil {
 		return fmt.Errorf("profile: %w", err)
 	}
@@ -110,96 +116,71 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 		}
 	}
 
-	// ---- Tags -------------------------------------------------------------
-	tagGo, err := q.UpsertTag(ctx, store.UpsertTagParams{Slug: "go", Name: "Go"})
-	if err != nil {
-		return fmt.Errorf("tag go: %w", err)
+	// ---- Tags ---------------------------------------------------------
+	// Mirrors every tag slug actually created via the admin editor — including
+	// the accidental near-duplicates ("llm"/"llms", "next-js"/"nextjs") that
+	// exist in the real data because they were typed in separately over time.
+	tagSeeds := []store.UpsertTagParams{
+		{Slug: "go", Name: "Go"},
+		{Slug: "design-systems", Name: "Design systems"},
+		{Slug: "rag", Name: "RAG"},
+		{Slug: "nextjs", Name: "Next.js"},
+		{Slug: "next-js", Name: "Next.js"},
+		{Slug: "python", Name: "Python"},
+		{Slug: "llm", Name: "LLMs"},
+		{Slug: "llms", Name: "LLMs"},
+		{Slug: "transistor", Name: "Transistor"},
+		{Slug: "smoke", Name: "Smoke"},
+		{Slug: "computer-architecture", Name: "Computer Architecture"},
+		{Slug: "alu", Name: "ALU"},
+		{Slug: "mosfet", Name: "MosFet"},
+		{Slug: "pgvector", Name: "pgvector"},
+		{Slug: "testing", Name: "Testing"},
 	}
-	tagDesign, err := q.UpsertTag(ctx, store.UpsertTagParams{Slug: "design-systems", Name: "Design systems"})
-	if err != nil {
-		return fmt.Errorf("tag design: %w", err)
-	}
-	tagRag, err := q.UpsertTag(ctx, store.UpsertTagParams{Slug: "rag", Name: "RAG"})
-	if err != nil {
-		return fmt.Errorf("tag rag: %w", err)
-	}
-	tagNext, err := q.UpsertTag(ctx, store.UpsertTagParams{Slug: "nextjs", Name: "Next.js"})
-	if err != nil {
-		return fmt.Errorf("tag nextjs: %w", err)
-	}
-	tagPython, err := q.UpsertTag(ctx, store.UpsertTagParams{Slug: "python", Name: "Python"})
-	if err != nil {
-		return fmt.Errorf("tag python: %w", err)
-	}
-	tagLLM, err := q.UpsertTag(ctx, store.UpsertTagParams{Slug: "llm", Name: "LLMs"})
-	if err != nil {
-		return fmt.Errorf("tag llm: %w", err)
+	tags := make(map[string]store.Tag, len(tagSeeds))
+	for _, t := range tagSeeds {
+		row, err := q.UpsertTag(ctx, t)
+		if err != nil {
+			return fmt.Errorf("tag %s: %w", t.Slug, err)
+		}
+		tags[t.Slug] = row
 	}
 
-	// ---- Blog series + 2 posts in series + 1 standalone ------------------
-	series, err := q.UpsertBlogSeries(ctx, store.UpsertBlogSeriesParams{
+	// ---- Blog series (currently unused by any published post, kept as-is) --
+	if _, err := q.UpsertBlogSeries(ctx, store.UpsertBlogSeriesParams{
 		Slug:        "building-a-portfolio",
 		Name:        "Building this portfolio",
 		Description: "A live diary of designing and shipping this site.",
-	})
-	if err != nil {
-		return fmt.Errorf("series: %w", err)
+	}); err != nil {
+		return fmt.Errorf("blog series: %w", err)
 	}
 
-	post1, err := q.UpsertBlogPost(ctx, store.UpsertBlogPostParams{
-		Slug:            "part-1-design-tokens",
-		Title:           "Part 1 — Locking the design tokens before writing a line of code",
-		Excerpt:         "Why I drew the type ramp and color system in Figma first, and the trade-offs that fell out.",
-		Body:            seriesPart1Body,
-		SeriesID:        series.ID,
-		SeriesOrder:     int4(1),
-		PublishedAt:     ts(2026, 5, 10),
-		ReadingTimeMins: content.ReadingTimeMins(seriesPart1Body),
+	// ---- Blog post ----------------------------------------------------
+	sandPost, err := q.UpsertBlogPost(ctx, store.UpsertBlogPostParams{
+		Slug:            "from-a-grain-of-sand-to-a-computer-brain",
+		Title:           "From a Grain of Sand to a Computer Brain",
+		Excerpt:         "",
+		Body:            blogGrainOfSandBody,
+		CoverUrl:        "https://pub-8309b9ffc8124004831c19e903d8bc4a.r2.dev/assets/e145823c-Gemini_Generated_Image_c5zw90c5zw90c5zw.png",
+		PublishedAt:     tsAt(2026, 6, 4, 14, 17, 50),
+		ReadingTimeMins: content.ReadingTimeMins(blogGrainOfSandBody),
 	})
 	if err != nil {
-		return fmt.Errorf("post 1: %w", err)
+		return fmt.Errorf("blog post sand-to-cpu: %w", err)
 	}
 
-	post2, err := q.UpsertBlogPost(ctx, store.UpsertBlogPostParams{
-		Slug:            "part-2-stack-decisions",
-		Title:           "Part 2 — Picking Go + sqlc over GORM",
-		Excerpt:         "Compile-time SQL safety beats ORM ergonomics, even at 10k req/day.",
-		Body:            seriesPart2Body,
-		SeriesID:        series.ID,
-		SeriesOrder:     int4(2),
-		PublishedAt:     ts(2026, 5, 17),
-		ReadingTimeMins: content.ReadingTimeMins(seriesPart2Body),
-	})
-	if err != nil {
-		return fmt.Errorf("post 2: %w", err)
-	}
-
-	standalone, err := q.UpsertBlogPost(ctx, store.UpsertBlogPostParams{
-		Slug:            "scratch-notes-pgx-v5",
-		Title:           "Scratch notes — pgx v5 nullable types",
-		Excerpt:         "pgtype.Text is fine. Stop wrapping it in *string.",
-		Body:            standalonePostBody,
-		PublishedAt:     ts(2026, 5, 22),
-		ReadingTimeMins: content.ReadingTimeMins(standalonePostBody),
-	})
-	if err != nil {
-		return fmt.Errorf("standalone post: %w", err)
-	}
-
-	// Tag the posts.
 	for _, link := range []store.LinkBlogPostTagParams{
-		{BlogPostID: post1.ID, TagID: tagDesign.ID},
-		{BlogPostID: post2.ID, TagID: tagGo.ID},
-		{BlogPostID: standalone.ID, TagID: tagGo.ID},
+		{BlogPostID: sandPost.ID, TagID: tags["alu"].ID},
+		{BlogPostID: sandPost.ID, TagID: tags["computer-architecture"].ID},
+		{BlogPostID: sandPost.ID, TagID: tags["mosfet"].ID},
+		{BlogPostID: sandPost.ID, TagID: tags["transistor"].ID},
 	} {
 		if err := q.LinkBlogPostTag(ctx, link); err != nil {
 			return fmt.Errorf("link blog tag: %w", err)
 		}
 	}
 
-	// ---- Projects (3 featured, with markdown sections) -------------------
-	// The homepage "featured work" strip renders up to 3 cards; seed exactly
-	// that many so the section reads as designed. sort_order drives the order.
+	// ---- Projects (2 featured) ------------------------------------------
 	resumeRanker, err := q.UpsertProject(ctx, store.UpsertProjectParams{
 		Slug:         "ai-resume-ranker",
 		Title:        "AI Resume Ranker",
@@ -215,6 +196,22 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	})
 	if err != nil {
 		return fmt.Errorf("project ai-resume-ranker: %w", err)
+	}
+	if _, err := q.UpdateProject(ctx, store.UpdateProjectParams{
+		ID:           resumeRanker.ID,
+		Slug:         resumeRanker.Slug,
+		Title:        resumeRanker.Title,
+		Tagline:      resumeRanker.Tagline,
+		Summary:      resumeRanker.Summary,
+		BodyOverview: resumeRanker.BodyOverview,
+		BodyWhyBuilt: resumeRanker.BodyWhyBuilt,
+		BodyLearning: resumeRanker.BodyLearning,
+		CoverUrl:     "https://pub-8309b9ffc8124004831c19e903d8bc4a.r2.dev/assets/d8d0fe63-Gemini_Generated_Image_520inl520inl520i.png",
+		RepoUrl:      resumeRanker.RepoUrl,
+		LiveUrl:      resumeRanker.LiveUrl,
+		Featured:     resumeRanker.Featured,
+	}); err != nil {
+		return fmt.Errorf("project ai-resume-ranker cover: %w", err)
 	}
 
 	ragDeepDive, err := q.UpsertProject(ctx, store.UpsertProjectParams{
@@ -233,40 +230,36 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 	if err != nil {
 		return fmt.Errorf("project rag-deep-dive: %w", err)
 	}
-
-	portfolioProj, err := q.UpsertProject(ctx, store.UpsertProjectParams{
-		Slug:         "this-portfolio",
-		Title:        "This portfolio",
-		Tagline:      "Neo-brutalist portfolio built deliberately.",
-		Summary:      "Tokens-first Next.js 16 + Go + Postgres portfolio. sqlc, pgx, golang-migrate on the backend; ISR + design-token-driven components on the frontend.",
-		BodyOverview: portfolioOverview,
-		BodyWhyBuilt: portfolioWhyBuilt,
-		BodyLearning: portfolioLearning,
-		RepoUrl:      text("https://github.com/anjanvikas/portfolio"),
-		SortOrder:    2,
-		Featured:     true,
-		PublishedAt:  ts(2026, 5, 1),
-	})
-	if err != nil {
-		return fmt.Errorf("project portfolio: %w", err)
+	if _, err := q.UpdateProject(ctx, store.UpdateProjectParams{
+		ID:           ragDeepDive.ID,
+		Slug:         ragDeepDive.Slug,
+		Title:        ragDeepDive.Title,
+		Tagline:      ragDeepDive.Tagline,
+		Summary:      ragDeepDive.Summary,
+		BodyOverview: ragDeepDive.BodyOverview,
+		BodyWhyBuilt: ragDeepDive.BodyWhyBuilt,
+		BodyLearning: ragDeepDive.BodyLearning,
+		CoverUrl:     "https://pub-8309b9ffc8124004831c19e903d8bc4a.r2.dev/assets/f8332b50-Gemini_Generated_Image_fyszq4fyszq4fysz.png",
+		RepoUrl:      ragDeepDive.RepoUrl,
+		LiveUrl:      ragDeepDive.LiveUrl,
+		Featured:     ragDeepDive.Featured,
+	}); err != nil {
+		return fmt.Errorf("project rag-deep-dive cover: %w", err)
 	}
 
 	for _, link := range []store.LinkProjectTagParams{
-		{ProjectID: resumeRanker.ID, TagID: tagPython.ID},
-		{ProjectID: resumeRanker.ID, TagID: tagLLM.ID},
-		{ProjectID: ragDeepDive.ID, TagID: tagPython.ID},
-		{ProjectID: ragDeepDive.ID, TagID: tagRag.ID},
-		{ProjectID: ragDeepDive.ID, TagID: tagLLM.ID},
-		{ProjectID: portfolioProj.ID, TagID: tagGo.ID},
-		{ProjectID: portfolioProj.ID, TagID: tagNext.ID},
-		{ProjectID: portfolioProj.ID, TagID: tagDesign.ID},
+		{ProjectID: resumeRanker.ID, TagID: tags["llms"].ID},
+		{ProjectID: resumeRanker.ID, TagID: tags["python"].ID},
+		{ProjectID: ragDeepDive.ID, TagID: tags["llms"].ID},
+		{ProjectID: ragDeepDive.ID, TagID: tags["python"].ID},
+		{ProjectID: ragDeepDive.ID, TagID: tags["rag"].ID},
 	} {
 		if err := q.LinkProjectTag(ctx, link); err != nil {
 			return fmt.Errorf("link project tag: %w", err)
 		}
 	}
 
-	// ---- Testimonials (2) -------------------------------------------------
+	// ---- Testimonials (2, both currently hidden via the admin toggle) -----
 	testimonials := []store.UpsertTestimonialParams{
 		{
 			AuthorName:    "Priya Sharma",
@@ -284,8 +277,38 @@ func seedAll(ctx context.Context, q *store.Queries) error {
 		},
 	}
 	for _, t := range testimonials {
-		if _, err := q.UpsertTestimonial(ctx, t); err != nil {
+		row, err := q.UpsertTestimonial(ctx, t)
+		if err != nil {
 			return fmt.Errorf("testimonial %s: %w", t.AuthorName, err)
+		}
+		if _, err := q.SetTestimonialVisibility(ctx, store.SetTestimonialVisibilityParams{
+			ID:      row.ID,
+			Visible: false,
+		}); err != nil {
+			return fmt.Errorf("testimonial %s visibility: %w", t.AuthorName, err)
+		}
+	}
+
+	// ---- Asset library (media uploaded via the admin editor) -------------
+	assets := []store.UpsertAssetParams{
+		{Filename: "Professional_headshot_of_the_young_202605241149.jpeg", MimeType: "image/jpeg", SizeBytes: 2385600, R2Key: "assets/c6744887-Professional_headshot_of_the_young_202605241149.jpeg", Width: int4(2752), Height: int4(1536)},
+		{Filename: "svgviewer-png-output.png", MimeType: "image/png", SizeBytes: 308479, R2Key: "assets/bb95680a-svgviewer-png-output.png", Width: int4(2000), Height: int4(1440)},
+		{Filename: "svgviewer-png-output (1).png", MimeType: "image/png", SizeBytes: 200646, R2Key: "assets/f160db88-svgviewer-png-output-1-.png", Width: int4(2000), Height: int4(960)},
+		{Filename: "svgviewer-png-output (2).png", MimeType: "image/png", SizeBytes: 229272, R2Key: "assets/480c902d-svgviewer-png-output-2-.png", Width: int4(2000), Height: int4(1120)},
+		{Filename: "svgviewer-png-output (3).png", MimeType: "image/png", SizeBytes: 152222, R2Key: "assets/9ac52125-svgviewer-png-output-3-.png", Width: int4(2000), Height: int4(1040)},
+		{Filename: "svgviewer-png-output (4).png", MimeType: "image/png", SizeBytes: 232989, R2Key: "assets/5ec589cb-svgviewer-png-output-4-.png", Width: int4(2000), Height: int4(1080)},
+		{Filename: "svgviewer-png-output (5).png", MimeType: "image/png", SizeBytes: 193638, R2Key: "assets/0117c3f2-svgviewer-png-output-5-.png", Width: int4(2000), Height: int4(1080)},
+		{Filename: "svgviewer-png-output (6).png", MimeType: "image/png", SizeBytes: 167896, R2Key: "assets/2b4b1931-svgviewer-png-output-6-.png", Width: int4(2000), Height: int4(1240)},
+		{Filename: "svgviewer-png-output (7).png", MimeType: "image/png", SizeBytes: 159693, R2Key: "assets/e5d79c6c-svgviewer-png-output-7-.png", Width: int4(2000), Height: int4(1000)},
+		{Filename: "sand_to_cpu_cover.png", MimeType: "image/png", SizeBytes: 47216, R2Key: "assets/dc767fd9-sand_to_cpu_cover.png", Width: int4(670), Height: int4(385)},
+		{Filename: "Gemini_Generated_Image_wttfb8wttfb8wttf.png", MimeType: "image/png", SizeBytes: 5713015, R2Key: "assets/562661ab-Gemini_Generated_Image_wttfb8wttfb8wttf.png", Width: int4(3200), Height: int4(1312)},
+		{Filename: "Gemini_Generated_Image_520inl520inl520i.png", MimeType: "image/png", SizeBytes: 4861000, R2Key: "assets/d8d0fe63-Gemini_Generated_Image_520inl520inl520i.png", Width: int4(3200), Height: int4(1312)},
+		{Filename: "Gemini_Generated_Image_fyszq4fyszq4fysz.png", MimeType: "image/png", SizeBytes: 4958876, R2Key: "assets/f8332b50-Gemini_Generated_Image_fyszq4fyszq4fysz.png", Width: int4(3200), Height: int4(1312)},
+		{Filename: "Gemini_Generated_Image_c5zw90c5zw90c5zw.png", MimeType: "image/png", SizeBytes: 327173, R2Key: "assets/e145823c-Gemini_Generated_Image_c5zw90c5zw90c5zw.png", Width: int4(1600), Height: int4(656)},
+	}
+	for _, a := range assets {
+		if _, err := q.UpsertAsset(ctx, a); err != nil {
+			return fmt.Errorf("asset %s: %w", a.Filename, err)
 		}
 	}
 
@@ -310,123 +333,29 @@ func ts(y int, m time.Month, d int) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: time.Date(y, m, d, 12, 0, 0, 0, time.UTC), Valid: true}
 }
 
-// ---- inline markdown bodies (real headings, code, mermaid, lists) ---------
+func tsAt(y int, m time.Month, d, h, mi, s int) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: time.Date(y, m, d, h, mi, s, 0, time.UTC), Valid: true}
+}
 
-const seriesPart1Body = "# Locking the tokens first\n\n" +
-	"Before writing any code I drew the entire type ramp, color palette, and\n" +
-	"spacing scale in Figma. The tokens are the contract; the components are\n" +
-	"the implementation.\n\n" +
-	"## Why this order matters\n\n" +
-	"If you build components first, every token decision is a retrofit and\n" +
-	"a refactor. Tokens first means components are born already on-brand.\n\n" +
-	"- Pick the type ramp before the headline component exists.\n" +
-	"- Pick the color tokens before the button has a hover state.\n" +
-	"- Pick the spacing scale before the page has a header.\n\n" +
-	"```ts\n" +
-	"export const ramp = {\n" +
-	"  display: '64/72',\n" +
-	"  h1: '48/56',\n" +
-	"  h2: '32/40',\n" +
-	"} as const;\n" +
-	"```\n\n" +
-	"## The flow\n\n" +
-	"```mermaid\n" +
-	"flowchart LR\n" +
-	"  tokens --> components --> pages --> ship\n" +
-	"```\n\n" +
-	"That's the whole skeleton.\n"
+// ---- real content, embedded from cmd/seed/content/*.md --------------------
 
-const seriesPart2Body = "# Picking Go + sqlc over GORM\n\n" +
-	"GORM is faster to start with. sqlc is faster to live with.\n\n" +
-	"## The trade I made\n\n" +
-	"1. Compile-time SQL safety — broken queries fail `make sqlc`, not at 2am.\n" +
-	"2. No N+1 surprises hiding behind `.Preload(...)`.\n" +
-	"3. Better signal for a Go-shaped portfolio.\n\n" +
-	"```go\n" +
-	"q := store.New(pool)\n" +
-	"profile, err := q.GetProfile(ctx)\n" +
-	"```\n\n" +
-	"## Where ORM ergonomics still win\n\n" +
-	"Dynamic filters. sqlc generates static functions; if the WHERE clause\n" +
-	"shifts at runtime you fall back to a hand-rolled `pool.Query` call.\n" +
-	"For a portfolio CRUD that almost never happens.\n\n" +
-	"```mermaid\n" +
-	"sequenceDiagram\n" +
-	"  participant H as Handler\n" +
-	"  participant S as Store\n" +
-	"  participant D as Postgres\n" +
-	"  H->>S: q.UpsertProject(...)\n" +
-	"  S->>D: INSERT ... ON CONFLICT\n" +
-	"  D-->>S: row\n" +
-	"  S-->>H: Project\n" +
-	"```\n"
+//go:embed content/blog-grain-of-sand.md
+var blogGrainOfSandBody string
 
-const standalonePostBody = "# pgx v5 nullable types\n\n" +
-	"`pgtype.Text` is not a footgun. It already models NULL correctly and\n" +
-	"Scan handles it without ceremony.\n\n" +
-	"- `*string` is one more indirection for nothing.\n" +
-	"- JSON marshalling of `pgtype.Text` emits the inner string or `null`.\n" +
-	"- The zero value is the NULL value. That's the whole API.\n\n" +
-	"```go\n" +
-	"var t pgtype.Text\n" +
-	"t = pgtype.Text{String: \"hi\", Valid: true}\n" +
-	"```\n"
+//go:embed content/project-ai-resume-ranker-overview.md
+var resumeRankerOverview string
 
-const resumeRankerOverview = "## Overview\n\n" +
-	"AI Resume Ranker is a screening platform that turns a stack of PDFs\n" +
-	"and a job description into a ranked shortlist with explainable scores.\n\n" +
-	"- Parse resumes into structured candidate profiles.\n" +
-	"- Shortlist with Sentence-Transformer embeddings for semantic similarity.\n" +
-	"- Deep-evaluate the top candidates with an LLM rubric.\n" +
-	"- Async background jobs with real-time progress polling for bulk uploads.\n"
+//go:embed content/project-ai-resume-ranker-why-built.md
+var resumeRankerWhyBuilt string
 
-const resumeRankerWhyBuilt = "## Why I built this\n\n" +
-	"Keyword filters are too dumb; reading 500 resumes by hand is too slow.\n" +
-	"I wanted a pipeline that combines cheap-and-fast semantic shortlisting\n" +
-	"with expensive-and-careful LLM evaluation — and shows its work.\n"
+//go:embed content/project-ai-resume-ranker-learning.md
+var resumeRankerLearning string
 
-const resumeRankerLearning = "## Learning journey\n\n" +
-	"1. Embedding-only ranking is good enough for the top 20% — pay the LLM\n" +
-	"   bill only for that bucket.\n" +
-	"2. Async jobs + progress polling beats long-running HTTP every time.\n" +
-	"3. Google OAuth2 was the right call over rolling auth myself.\n"
+//go:embed content/project-rag-deep-dive-overview.md
+var ragDeepDiveOverview string
 
-const ragDeepDiveOverview = "## Overview\n\n" +
-	"A production-grade conversational AI platform built to *teach* RAG, not\n" +
-	"just use it.\n\n" +
-	"- Hybrid retrieval: dense embeddings + BM25 + cross-encoder reranking.\n" +
-	"- GraphRAG and multi-hop retrieval across Qdrant and Neo4j.\n" +
-	"- Pipeline explainer UI that exposes every retrieval stage live.\n" +
-	"- Interactive Learning Hub with hands-on RAG component demos.\n"
+//go:embed content/project-rag-deep-dive-why-built.md
+var ragDeepDiveWhyBuilt string
 
-const ragDeepDiveWhyBuilt = "## Why I built this\n\n" +
-	"Most RAG tutorials stop at \"top-k from a vector DB.\" That's not how\n" +
-	"production systems retrieve. I wanted a single place to see hybrid\n" +
-	"search, reranking, and graph traversal side-by-side and understand\n" +
-	"why each layer earns its complexity.\n"
-
-const ragDeepDiveLearning = "## Learning journey\n\n" +
-	"1. Cross-encoder reranking changes everything — and it's cheap if you\n" +
-	"   only rerank the top 50.\n" +
-	"2. Graph + vector beats either alone on multi-hop questions.\n" +
-	"3. The explainer UI taught me more about my own pipeline than logs ever did.\n"
-
-const portfolioOverview = "## Overview\n\n" +
-	"The site you're reading. A tokens-first, neo-brutalist portfolio built\n" +
-	"to read well on a recruiter scan *and* survive a 10-minute deep read.\n\n" +
-	"- Frontend: Next.js 16 + TypeScript + Tailwind, ISR for project/blog pages.\n" +
-	"- Backend: Go + chi + sqlc + pgx + golang-migrate on Postgres.\n" +
-	"- Local dev: Docker (Postgres + Redis). Deploy cutover: Neon + Fly.io.\n"
-
-const portfolioWhyBuilt = "## Why I built this\n\n" +
-	"Most engineer portfolios are either templates or one-off React projects.\n" +
-	"I wanted something that doubles as a working showcase of the stack I\n" +
-	"actually ship in — Go backend, typed SQL, design tokens, admin CMS — and\n" +
-	"forces me to live with my own decisions.\n"
-
-const portfolioLearning = "## Learning journey\n\n" +
-	"1. sqlc + pgx beats GORM for portfolio-shaped CRUD. Compile-time SQL safety\n" +
-	"   over runtime convenience.\n" +
-	"2. Design tokens locked in Figma *before* writing components saved a refactor.\n" +
-	"3. Next.js `force-cache` is great for static prod but a footgun in dev —\n" +
-	"   use `revalidate` for anything that comes from your own DB.\n"
+//go:embed content/project-rag-deep-dive-learning.md
+var ragDeepDiveLearning string
