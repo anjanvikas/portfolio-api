@@ -8,6 +8,7 @@ sql:
       - "migrations/000003_blog_post_reading_time.up.sql"
       - "migrations/000004_admin_crud_columns.up.sql"
       - "migrations/000005_blog_post_og_image.up.sql"
+      - "migrations/000006_home_content.up.sql"
     gen:
       go:
         package: "store"

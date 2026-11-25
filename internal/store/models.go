@@ -62,6 +62,13 @@ type Experience struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type HomeContent struct {
+	ID          int16              `json:"id"`
+	OpenToRoles bool               `json:"open_to_roles"`
+	Content     []byte             `json:"content"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Profile struct {
 	ID        pgtype.UUID        `json:"id"`
 	Name      string             `json:"name"`

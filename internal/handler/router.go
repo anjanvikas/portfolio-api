@@ -88,6 +88,8 @@ func NewRouter(d Deps) http.Handler {
 	experienceH := NewExperience(queries)
 	testimonialsH := NewTestimonials(queries)
 	statsH := NewStats(queries)
+	homeH := NewHomeContent(queries)
+	adminHomeH := NewAdminHomeContent(queries)
 	adminPostsH := NewAdminPosts(queries)
 	if ogReady {
 		adminPostsH.OG = d.OGGenerator
@@ -120,6 +122,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Get("/series/{slug}", seriesH.Detail)
 		r.Get("/experience", experienceH.List)
 		r.Get("/testimonials", testimonialsH.List)
+		r.Get("/home", homeH.Get)
 		r.Post("/contact", contactH.Submit)
 
 		// Public auth endpoints — login is rate-limited and logout must work
@@ -175,6 +178,10 @@ func NewRouter(d Deps) http.Handler {
 				// Profile editor (SCRUM-68).
 				r.Get("/profile", adminProfileH.Get)
 				r.Put("/profile", adminProfileH.Update)
+
+				// Home page copy (SCRUM-116).
+				r.Get("/home", adminHomeH.Get)
+				r.Put("/home", adminHomeH.Update)
 
 				// Asset upload pipeline (SCRUM-67): presign a direct
 				// browser→R2 PUT, register the uploaded object, list the
