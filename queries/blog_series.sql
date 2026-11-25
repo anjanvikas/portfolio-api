@@ -6,6 +6,14 @@ SET name        = EXCLUDED.name,
     description = EXCLUDED.description
 RETURNING *;
 
+-- name: CreateBlogSeries :one
+-- Powers POST /api/v1/admin/series. Plain insert (not upsert) so a slug
+-- collision returns a unique-violation the handler can turn into a 409,
+-- instead of silently overwriting an existing series.
+INSERT INTO blog_series (slug, name, description)
+VALUES ($1, $2, $3)
+RETURNING *;
+
 -- name: GetBlogSeriesBySlug :one
 SELECT * FROM blog_series WHERE slug = $1;
 

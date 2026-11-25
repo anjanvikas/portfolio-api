@@ -39,6 +39,10 @@ type fakeAdminPostQ struct {
 	linkedTags   []string
 	upsertedTags []string
 	setOGCalls   []store.SetBlogPostOGImageParams
+
+	createSeriesParams store.CreateBlogSeriesParams
+	createSeriesResult store.BlogSeries
+	createSeriesErr    error
 }
 
 func (f *fakeAdminPostQ) ListAdminPosts(context.Context) ([]store.ListAdminPostsRow, error) {
@@ -85,6 +89,16 @@ func (f *fakeAdminPostQ) UpsertTag(_ context.Context, arg store.UpsertTagParams)
 }
 func (f *fakeAdminPostQ) ListAllSeries(context.Context) ([]store.ListAllSeriesRow, error) {
 	return nil, nil
+}
+func (f *fakeAdminPostQ) CreateBlogSeries(_ context.Context, arg store.CreateBlogSeriesParams) (store.BlogSeries, error) {
+	f.createSeriesParams = arg
+	if f.createSeriesErr != nil {
+		return store.BlogSeries{}, f.createSeriesErr
+	}
+	if f.createSeriesResult.Slug == "" {
+		return store.BlogSeries{ID: pgtype.UUID{Valid: true}, Slug: arg.Slug, Name: arg.Name}, nil
+	}
+	return f.createSeriesResult, nil
 }
 func (f *fakeAdminPostQ) ListTags(context.Context) ([]store.Tag, error) { return nil, nil }
 func (f *fakeAdminPostQ) GetProfile(context.Context) (store.Profile, error) {
@@ -167,6 +181,47 @@ func TestAdminCreate_SlugConflict(t *testing.T) {
 	h := NewAdminPosts(q)
 	rr := httptest.NewRecorder()
 	h.Create(rr, httptest.NewRequest(http.MethodPost, "/api/v1/admin/posts", strings.NewReader(`{"title":"Dup"}`)))
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status: got %d want 409; body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAdminCreateSeries_Success(t *testing.T) {
+	q := &fakeAdminPostQ{}
+	h := NewAdminPosts(q)
+	rr := httptest.NewRecorder()
+	h.CreateSeries(rr, httptest.NewRequest(http.MethodPost, "/api/v1/admin/series", strings.NewReader(`{"name":"Building a CMS"}`)))
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("status: got %d want 201; body=%s", rr.Code, rr.Body.String())
+	}
+	if q.createSeriesParams.Slug != "building-a-cms" {
+		t.Errorf("slug: got %q want %q", q.createSeriesParams.Slug, "building-a-cms")
+	}
+	var resp adminSeriesDTO
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
+	if resp.Name != "Building a CMS" || resp.Slug != "building-a-cms" {
+		t.Errorf("unexpected response: %+v", resp)
+	}
+}
+
+func TestAdminCreateSeries_MissingName(t *testing.T) {
+	q := &fakeAdminPostQ{}
+	h := NewAdminPosts(q)
+	rr := httptest.NewRecorder()
+	h.CreateSeries(rr, httptest.NewRequest(http.MethodPost, "/api/v1/admin/series", strings.NewReader(`{"name":"  "}`)))
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d want 400", rr.Code)
+	}
+}
+
+func TestAdminCreateSeries_SlugConflict(t *testing.T) {
+	q := &fakeAdminPostQ{createSeriesErr: &pgconn.PgError{Code: "23505"}}
+	h := NewAdminPosts(q)
+	rr := httptest.NewRecorder()
+	h.CreateSeries(rr, httptest.NewRequest(http.MethodPost, "/api/v1/admin/series", strings.NewReader(`{"name":"Dup"}`)))
 
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("status: got %d want 409; body=%s", rr.Code, rr.Body.String())

@@ -43,6 +43,7 @@ type adminPostQueries interface {
 	LinkBlogPostTag(ctx context.Context, arg store.LinkBlogPostTagParams) error
 	UpsertTag(ctx context.Context, arg store.UpsertTagParams) (store.Tag, error)
 	ListAllSeries(ctx context.Context) ([]store.ListAllSeriesRow, error)
+	CreateBlogSeries(ctx context.Context, arg store.CreateBlogSeriesParams) (store.BlogSeries, error)
 	ListTags(ctx context.Context) ([]store.Tag, error)
 	GetProfile(ctx context.Context) (store.Profile, error)
 	SetBlogPostOGImage(ctx context.Context, arg store.SetBlogPostOGImageParams) error
@@ -352,6 +353,52 @@ func (a *AdminPosts) ListSeries(w http.ResponseWriter, r *http.Request) {
 		out = append(out, adminSeriesDTO{ID: uuidString(row.ID), Slug: row.Slug, Name: row.Name})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// adminSeriesCreateRequest is the body of POST /api/v1/admin/series.
+type adminSeriesCreateRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// CreateSeries handles POST /api/v1/admin/series — creates a new series from
+// the editor's inline "+ New series" input. The slug is derived from the
+// name (mirrors post slugs); a name that collides with an existing series'
+// slug returns 409 rather than silently renaming it.
+func (a *AdminPosts) CreateSeries(w http.ResponseWriter, r *http.Request) {
+	var req adminSeriesCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"errors": map[string]string{"name": "Name is required."}})
+		return
+	}
+	slug := slugify(name)
+	if slug == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"errors": map[string]string{"name": "Name must contain at least one letter or number."}})
+		return
+	}
+
+	created, err := a.Q.CreateBlogSeries(r.Context(), store.CreateBlogSeriesParams{
+		Slug:        slug,
+		Name:        name,
+		Description: strings.TrimSpace(req.Description),
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "a series with that name already exists"})
+			return
+		}
+		slog.ErrorContext(r.Context(), "create series", slog.String("error", err.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, adminSeriesDTO{ID: uuidString(created.ID), Slug: created.Slug, Name: created.Name})
 }
 
 // ListTags handles GET /api/v1/admin/tags — all tag names for the autocomplete.

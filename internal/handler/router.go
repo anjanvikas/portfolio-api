@@ -145,6 +145,7 @@ func NewRouter(d Deps) http.Handler {
 
 				// Selectors backing the editor's series + tag inputs.
 				r.Get("/series", adminPostsH.ListSeries)
+				r.Post("/series", adminPostsH.CreateSeries)
 				r.Get("/tags", adminPostsH.ListTags)
 
 				// Project CRUD (SCRUM-68).

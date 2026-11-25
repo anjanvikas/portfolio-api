@@ -11,6 +11,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createBlogSeries = `-- name: CreateBlogSeries :one
+INSERT INTO blog_series (slug, name, description)
+VALUES ($1, $2, $3)
+RETURNING id, slug, name, description, created_at
+`
+
+type CreateBlogSeriesParams struct {
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// Powers POST /api/v1/admin/series. Plain insert (not upsert) so a slug
+// collision returns a unique-violation the handler can turn into a 409,
+// instead of silently overwriting an existing series.
+func (q *Queries) CreateBlogSeries(ctx context.Context, arg CreateBlogSeriesParams) (BlogSeries, error) {
+	row := q.db.QueryRow(ctx, createBlogSeries, arg.Slug, arg.Name, arg.Description)
+	var i BlogSeries
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getBlogSeriesBySlug = `-- name: GetBlogSeriesBySlug :one
 SELECT id, slug, name, description, created_at FROM blog_series WHERE slug = $1
 `
