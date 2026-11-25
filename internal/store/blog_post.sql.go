@@ -107,7 +107,7 @@ SELECT
     bs.name AS series_name,
     bs.slug AS series_slug,
     COALESCE(
-        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        array_agg(DISTINCT t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM blog_post p
@@ -171,7 +171,7 @@ SELECT
     bs.slug   AS series_slug,
     p.reading_time_mins,
     COALESCE(
-        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        array_agg(DISTINCT t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM blog_post p
@@ -379,7 +379,7 @@ SELECT
     bs.slug   AS series_slug,
     p.reading_time_mins,
     COALESCE(
-        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        array_agg(DISTINCT t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM blog_post p
