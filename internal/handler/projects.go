@@ -40,11 +40,14 @@ func NewProjects(q projectQueries) *Projects {
 }
 
 type projectCardDTO struct {
-	Slug     string   `json:"slug"`
-	Title    string   `json:"title"`
-	Summary  string   `json:"summary"`
-	CoverURL string   `json:"cover_url"`
-	Tags     []string `json:"tags"`
+	Slug        string   `json:"slug"`
+	Title       string   `json:"title"`
+	Summary     string   `json:"summary"`
+	CoverURL    string   `json:"cover_url"`
+	PublishedAt string   `json:"published_at"`
+	RepoURL     string   `json:"repo_url"`
+	LiveURL     string   `json:"live_url"`
+	Tags        []string `json:"tags"`
 }
 
 // List handles GET /api/v1/projects. It supports two query params:
@@ -68,14 +71,21 @@ func (p *Projects) List(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]projectCardDTO, 0, len(rows))
 	for _, row := range rows {
+		tags := row.Tags
+		if tags == nil {
+			tags = []string{}
+		}
 		out = append(out, projectCardDTO{
 			Slug:    row.Slug,
 			Title:   row.Title,
 			Summary: row.Summary,
 			// cover_key is the project's cover_url (empty when unset); the UI
 			// falls back to a colored cover slab.
-			CoverURL: nz(p.Normalizer, row.CoverKey),
-			Tags:     row.Tags,
+			CoverURL:    nz(p.Normalizer, row.CoverKey),
+			PublishedAt: isoDate(row.PublishedAt),
+			RepoURL:     row.RepoUrl.String,
+			LiveURL:     row.LiveUrl.String,
+			Tags:        tags,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -128,9 +138,7 @@ func (p *Projects) Detail(w http.ResponseWriter, r *http.Request) {
 		LiveURL:  row.LiveUrl.String,
 		Tags:     row.Tags,
 	}
-	if row.PublishedAt.Valid {
-		dto.PublishedAt = row.PublishedAt.Time.Format("2006-01-02")
-	}
+	dto.PublishedAt = isoDate(row.PublishedAt)
 	writeJSON(w, http.StatusOK, dto)
 }
 

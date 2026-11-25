@@ -54,7 +54,7 @@ SELECT
     p.published_at,
     p.cover_url AS cover_key,
     COALESCE(
-        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        array_agg(DISTINCT t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM project p
@@ -74,8 +74,11 @@ SELECT
     p.title,
     p.summary,
     p.cover_url AS cover_key,
+    p.published_at,
+    p.repo_url,
+    p.live_url,
     COALESCE(
-        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        array_agg(DISTINCT t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM project p
@@ -115,7 +118,7 @@ SELECT
     p.sort_order,
     p.published_at,
     COALESCE(
-        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        array_agg(DISTINCT t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM project p

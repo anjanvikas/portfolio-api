@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -166,5 +167,50 @@ func TestProjectsList_DefaultsAndClamp(t *testing.T) {
 				t.Errorf("empty body: got %q want []", body)
 			}
 		})
+	}
+}
+
+func TestProjectsList_CardFields(t *testing.T) {
+	pub := pgtype.Timestamptz{Time: time.Date(2026, 7, 12, 9, 30, 0, 0, time.UTC), Valid: true}
+	q := &fakeProjectQ{
+		rows: []store.ListProjectCardsRow{
+			{
+				Slug: "a", Title: "A", Summary: "s",
+				PublishedAt: pub,
+				RepoUrl:     pgtype.Text{String: "https://github.com/x/a", Valid: true},
+				Tags:        []string{"Go"},
+			},
+			{Slug: "b", Title: "B", Tags: nil},
+		},
+	}
+	rr := httptest.NewRecorder()
+	NewProjects(q).List(rr, httptest.NewRequest(http.MethodGet, "/api/v1/projects?limit=24", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got %d; body=%s", rr.Code, rr.Body.String())
+	}
+	var got []map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len: got %d", len(got))
+	}
+	for i, card := range got {
+		for _, k := range []string{"slug", "title", "summary", "cover_url", "published_at", "repo_url", "live_url", "tags"} {
+			if _, ok := card[k]; !ok {
+				t.Errorf("card %d missing key %q", i, k)
+			}
+		}
+	}
+	a := got[0]
+	if a["published_at"] != "2026-07-12" || a["repo_url"] != "https://github.com/x/a" || a["live_url"] != "" {
+		t.Errorf("card a fields: %+v", a)
+	}
+	b := got[1]
+	if b["published_at"] != "" || b["repo_url"] != "" || b["live_url"] != "" {
+		t.Errorf("card b should have empty strings: %+v", b)
+	}
+	if tags, ok := b["tags"].([]any); !ok || len(tags) != 0 {
+		t.Errorf("card b tags should be [], got %#v", b["tags"])
 	}
 }

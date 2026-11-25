@@ -96,7 +96,7 @@ SELECT
     p.sort_order,
     p.published_at,
     COALESCE(
-        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        array_agg(DISTINCT t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM project p
@@ -162,7 +162,7 @@ SELECT
     p.published_at,
     p.cover_url AS cover_key,
     COALESCE(
-        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        array_agg(DISTINCT t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM project p
@@ -283,8 +283,11 @@ SELECT
     p.title,
     p.summary,
     p.cover_url AS cover_key,
+    p.published_at,
+    p.repo_url,
+    p.live_url,
     COALESCE(
-        array_agg(t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
+        array_agg(DISTINCT t.name ORDER BY t.name) FILTER (WHERE t.id IS NOT NULL),
         '{}'
     )::text[] AS tags
 FROM project p
@@ -303,11 +306,14 @@ type ListProjectCardsParams struct {
 }
 
 type ListProjectCardsRow struct {
-	Slug     string   `json:"slug"`
-	Title    string   `json:"title"`
-	Summary  string   `json:"summary"`
-	CoverKey string   `json:"cover_key"`
-	Tags     []string `json:"tags"`
+	Slug        string             `json:"slug"`
+	Title       string             `json:"title"`
+	Summary     string             `json:"summary"`
+	CoverKey    string             `json:"cover_key"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	RepoUrl     pgtype.Text        `json:"repo_url"`
+	LiveUrl     pgtype.Text        `json:"live_url"`
+	Tags        []string           `json:"tags"`
 }
 
 // Powers the homepage "featured work" strip and the projects index. Aggregates
@@ -328,6 +334,9 @@ func (q *Queries) ListProjectCards(ctx context.Context, arg ListProjectCardsPara
 			&i.Title,
 			&i.Summary,
 			&i.CoverKey,
+			&i.PublishedAt,
+			&i.RepoUrl,
+			&i.LiveUrl,
 			&i.Tags,
 		); err != nil {
 			return nil, err
