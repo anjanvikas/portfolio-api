@@ -14,14 +14,23 @@
 //	SITE_URL            — site origin shown in the card band (default localhost)
 //	OG_HOMEPAGE_NAME    — display name (default "Anjan Vikas Reddy")
 //	OG_HOMEPAGE_HEADLINE— subtitle (default "engineer, builder, writer")
-//	OG_HOMEPAGE_KEY     — R2 object key (default "og/homepage.png")
+//	OG_HOMEPAGE_KEY     — R2 object key (default "og/homepage.png"); set a NEW key
+//	                      (e.g. og/homepage-notebook.png) when the card changes so
+//	                      LinkedIn/Slack caches see a new URL
+//
+// Flags:
+//
+//	-allow-localhost    — permit a localhost SITE_URL when uploading (refused by default)
+//	-out <file>         — render locally to this PNG, skip R2 upload (no R2 needed)
 package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/anjanvikas/portfolio-api/internal/config"
@@ -31,6 +40,9 @@ import (
 
 func main() {
 	logger.Init()
+	outFile := flag.String("out", "", "render to this local PNG path and skip the R2 upload")
+	allowLocal := flag.Bool("allow-localhost", false, "allow a localhost SITE_URL when uploading")
+	flag.Parse()
 
 	if err := config.LoadDotEnv(".env"); err != nil {
 		fmt.Fprintln(os.Stderr, "dotenv:", err)
@@ -41,7 +53,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "config:", err)
 		os.Exit(1)
 	}
-	if !cfg.R2Configured() {
+	if *outFile == "" && !cfg.R2Configured() {
 		fmt.Fprintln(os.Stderr, "R2 is not configured — set R2_ACCESS_KEY / R2_SECRET_KEY / R2_BUCKET_NAME / R2_ENDPOINT in .env")
 		os.Exit(1)
 	}
@@ -60,6 +72,25 @@ func main() {
 		fmt.Fprintln(os.Stderr, "render:", err)
 		os.Exit(1)
 	}
+
+	if *outFile != "" {
+		if err := os.MkdirAll(filepath.Dir(*outFile), 0o755); err != nil {
+			fmt.Fprintln(os.Stderr, "mkdir:", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(*outFile, png, 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "write:", err)
+			os.Exit(1)
+		}
+		fmt.Println(*outFile)
+		return
+	}
+
+	if err := service.CheckSiteURLForUpload(cfg.SiteURL, *allowLocal); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("uploading: bucket=%s site=%s key=%s\n", cfg.R2BucketName, cfg.SiteURL, key)
 
 	presigner := service.NewR2Presigner(cfg.R2AccessKey, cfg.R2SecretKey, cfg.R2BucketName, cfg.R2Endpoint, cfg.R2PublicBaseURL)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

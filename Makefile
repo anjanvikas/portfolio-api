@@ -74,10 +74,21 @@ seed:
 hashpw:
 	@read -rsp "Passphrase: " pw && echo && printf %s "$$pw" | go run ./cmd/hashpw
 
-## og-homepage: render + upload the static homepage OG image to R2 (one-shot)
+## og-homepage: render + upload the static homepage OG image to R2 (one-shot).
+## Set OG_HOMEPAGE_KEY to a NEW key (e.g. og/homepage-notebook.png) when the card
+## design changes so LinkedIn/Slack caches see a new URL. Use -out <file> (go run
+## directly) to render locally without uploading.
 .PHONY: og-homepage
 og-homepage:
 	go run ./cmd/gen-homepage-og
+
+## og-posts: re-render + upload every published post's OG card and update og_image_url
+## Write runs need -yes (and refuse a localhost SITE_URL unless -allow-localhost), so
+## `make og-posts` alone aborts safely. Preview: go run ./cmd/gen-post-og -dry-run -out ./tmp/og
+## Write: make og-posts ARGS="-yes [-slug <slug>]"
+.PHONY: og-posts
+og-posts:
+	go run ./cmd/gen-post-og $(ARGS)
 
 ## lint: golangci-lint
 .PHONY: lint

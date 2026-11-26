@@ -439,6 +439,48 @@ func (q *Queries) ListPublishedPostCards(ctx context.Context, rowLimit int32) ([
 	return items, nil
 }
 
+const listPublishedPostOGTargets = `-- name: ListPublishedPostOGTargets :many
+SELECT id, slug, title, og_image_url
+FROM blog_post
+WHERE published_at IS NOT NULL
+ORDER BY published_at DESC
+`
+
+type ListPublishedPostOGTargetsRow struct {
+	ID         pgtype.UUID `json:"id"`
+	Slug       string      `json:"slug"`
+	Title      string      `json:"title"`
+	OgImageUrl string      `json:"og_image_url"`
+}
+
+// SCRUM-112: every published post's OG target, newest first. Used by
+// cmd/gen-post-og to re-render all post cards. Same predicate as
+// GetPublishedPostOGTarget.
+func (q *Queries) ListPublishedPostOGTargets(ctx context.Context) ([]ListPublishedPostOGTargetsRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedPostOGTargets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPublishedPostOGTargetsRow{}
+	for rows.Next() {
+		var i ListPublishedPostOGTargetsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.OgImageUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const publishBlogPost = `-- name: PublishBlogPost :one
 UPDATE blog_post
 SET published_at = COALESCE(published_at, now()),
@@ -488,6 +530,24 @@ type SetBlogPostOGImageParams struct {
 // regenerate by clearing the column and re-publishing.
 func (q *Queries) SetBlogPostOGImage(ctx context.Context, arg SetBlogPostOGImageParams) error {
 	_, err := q.db.Exec(ctx, setBlogPostOGImage, arg.OgImageUrl, arg.ID)
+	return err
+}
+
+const setBlogPostOGImageKeepUpdatedAt = `-- name: SetBlogPostOGImageKeepUpdatedAt :exec
+UPDATE blog_post
+SET og_image_url = $1
+WHERE id = $2
+`
+
+type SetBlogPostOGImageKeepUpdatedAtParams struct {
+	OgImageUrl string      `json:"og_image_url"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+// SCRUM-112: bulk OG regeneration (cmd/gen-post-og) must not reorder or
+// "touch" posts, so unlike SetBlogPostOGImage this leaves updated_at alone.
+func (q *Queries) SetBlogPostOGImageKeepUpdatedAt(ctx context.Context, arg SetBlogPostOGImageKeepUpdatedAtParams) error {
+	_, err := q.db.Exec(ctx, setBlogPostOGImageKeepUpdatedAt, arg.OgImageUrl, arg.ID)
 	return err
 }
 

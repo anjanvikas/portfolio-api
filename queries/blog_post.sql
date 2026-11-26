@@ -192,3 +192,19 @@ SELECT id, slug, title, og_image_url
 FROM blog_post
 WHERE slug = sqlc.arg(slug)
   AND published_at IS NOT NULL;
+
+-- name: ListPublishedPostOGTargets :many
+-- SCRUM-112: every published post's OG target, newest first. Used by
+-- cmd/gen-post-og to re-render all post cards. Same predicate as
+-- GetPublishedPostOGTarget.
+SELECT id, slug, title, og_image_url
+FROM blog_post
+WHERE published_at IS NOT NULL
+ORDER BY published_at DESC;
+
+-- name: SetBlogPostOGImageKeepUpdatedAt :exec
+-- SCRUM-112: bulk OG regeneration (cmd/gen-post-og) must not reorder or
+-- "touch" posts, so unlike SetBlogPostOGImage this leaves updated_at alone.
+UPDATE blog_post
+SET og_image_url = sqlc.arg(og_image_url)
+WHERE id = sqlc.arg(id);
