@@ -49,14 +49,14 @@ const (
 // Notebook palette (docs/design-tokens.md). Text pairs on sheet: ink 15:1,
 // pencil 7.0:1; ink on highlight 13.4:1. Highlighters/tape are backgrounds only.
 var (
-	ogPaper     = color.RGBA{0xFB, 0xF7, 0xEE, 0xFF} // paper (desk)
-	ogPaperDot  = color.RGBA{0xD9, 0xCF, 0xBD, 0xFF} // paper-dot
-	ogSheet     = color.RGBA{0xFF, 0xFD, 0xF8, 0xFF} // sheet
-	ogRuleBlue  = color.RGBA{0xDC, 0xE8, 0xF5, 0xFF} // rule-blue
-	ogMarginRed = color.RGBA{0xF0, 0xA5, 0xA5, 0xFF} // margin-red
-	ogInk       = color.RGBA{0x1F, 0x1B, 0x16, 0xFF} // ink
-	ogPencil    = color.RGBA{0x5E, 0x57, 0x4D, 0xFF} // pencil
-	ogHighlight = color.RGBA{0xFF, 0xE2, 0x7A, 0xFF} // highlight-yellow (swipe)
+	ogPaper     = color.RGBA{0xFB, 0xF7, 0xEE, 0xFF}  // paper (desk)
+	ogPaperDot  = color.RGBA{0xD9, 0xCF, 0xBD, 0xFF}  // paper-dot
+	ogSheet     = color.RGBA{0xFF, 0xFD, 0xF8, 0xFF}  // sheet
+	ogRuleBlue  = color.RGBA{0xDC, 0xE8, 0xF5, 0xFF}  // rule-blue
+	ogMarginRed = color.RGBA{0xF0, 0xA5, 0xA5, 0xFF}  // margin-red
+	ogInk       = color.RGBA{0x1F, 0x1B, 0x16, 0xFF}  // ink
+	ogPencil    = color.RGBA{0x5E, 0x57, 0x4D, 0xFF}  // pencil
+	ogHighlight = color.RGBA{0xFF, 0xE2, 0x7A, 0xFF}  // highlight-yellow (swipe)
 	ogTape      = color.NRGBA{0xFF, 0xE2, 0x7A, 0xD9} // washi tape, translucent yellow
 	ogShadow    = color.NRGBA{0x1F, 0x1B, 0x16, 0x26} // shadow-paper, ink at ~15%
 )
@@ -196,11 +196,29 @@ func (g *GGGenerator) RenderPost(title, authorName, siteURL string) ([]byte, err
 	// Footer: handwritten byline left, mono meta right.
 	dc.SetFontFace(g.face(g.hand, 44))
 	dc.SetColor(ogPencil)
-	dc.DrawString("by "+authorName, ogTextX, 548)
-	dc.SetFontFace(g.face(g.mono, 24))
-	dc.DrawStringAnchored(siteHost(siteURL)+" · POST", OGWidth-ogSheetInset-48, 540, 1, 0.5)
+	byline := "by " + authorName
+	dc.DrawString(byline, ogTextX, 548)
+	bw, _ := dc.MeasureString(byline)
+	g.drawMeta(dc, siteHost(siteURL)+" · POST", ogTextX+bw+32)
 
 	return encodeOG(dc)
+}
+
+// drawMeta right-aligns the mono meta line on the footer row. A long host
+// (e.g. a *.vercel.app domain) would run into the byline, so the font steps
+// down until it fits right of minX; if it still does not fit, the line moves
+// up onto its own row above the byline.
+func (g *GGGenerator) drawMeta(dc *gg.Context, meta string, minX float64) {
+	right := float64(OGWidth - ogSheetInset - 48)
+	for _, size := range []float64{24, 22, 20, 18} {
+		dc.SetFontFace(g.face(g.mono, size))
+		if w, _ := dc.MeasureString(meta); right-w >= minX {
+			dc.DrawStringAnchored(meta, right, 540, 1, 0.5)
+			return
+		}
+	}
+	dc.SetFontFace(g.face(g.mono, 22))
+	dc.DrawStringAnchored(meta, right, 488, 1, 0.5)
 }
 
 // RenderHomepage draws the static homepage card: name on a highlighter swipe,
